@@ -111,34 +111,83 @@ main {
   cursor: pointer;
   border: 1px solid rgba(0,0,0,0.15);
 }
-/* Acquire declaration */
-.acquire-bar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--borders);
-}
-.acquire-bar label { font-size: 0.8rem; font-weight: 600; }
-.acquire-bar select {
-  padding: 4px 8px;
-  border: 1px solid var(--borders);
-  border-radius: 4px;
-  font-size: 0.8rem;
-}
-.acquire-bar button {
-  padding: 6px 14px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: var(--accent);
-  color: white;
+/* Clickable tile pips in display */
+.exp-tile-pip.clickable {
   cursor: pointer;
-  font-size: 0.8rem;
+  transition: transform 0.12s, box-shadow 0.12s;
 }
-.acquire-bar button:hover { background: #15573c; }
-.acquire-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+.exp-tile-pip.clickable:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0,0,0,0.25);
+  z-index: 2;
+  position: relative;
+}
+.exp-stack-item.clickable-exp {
+  cursor: pointer;
+  transition: box-shadow 0.12s, border-color 0.12s;
+}
+.exp-stack-item.clickable-exp:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+/* Match choice modal */
+.match-modal-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.4); z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+}
+.match-modal {
+  background: var(--surface); border-radius: 12px;
+  padding: 20px 24px; max-width: 360px; width: 90%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+.match-modal h3 {
+  font-size: 0.95rem; margin-bottom: 4px; color: var(--text);
+}
+.match-modal .match-subtitle {
+  font-size: 0.75rem; color: var(--text-muted); margin-bottom: 14px;
+}
+.match-modal .match-tile-preview {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 14px; padding: 8px 10px;
+  background: var(--bg); border-radius: 8px;
+}
+.match-modal .match-tile-swatch {
+  width: 36px; height: 36px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; color: white; font-weight: bold;
+  border: 1px solid rgba(0,0,0,0.15);
+}
+.match-modal .match-tile-info {
+  font-size: 0.8rem; line-height: 1.3;
+}
+.match-btn-row {
+  display: flex; gap: 8px; margin-bottom: 8px;
+}
+.match-btn {
+  flex: 1; padding: 10px 8px; border: 2px solid var(--borders);
+  border-radius: 8px; background: var(--surface);
+  cursor: pointer; text-align: center; transition: all 0.12s;
+}
+.match-btn:hover:not(:disabled) {
+  border-color: var(--accent); background: #f0f9f4;
+}
+.match-btn:disabled {
+  opacity: 0.35; cursor: not-allowed;
+}
+.match-btn .match-btn-label {
+  font-size: 0.85rem; font-weight: 600; display: block;
+}
+.match-btn .match-btn-preview {
+  font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;
+}
+.match-cancel {
+  display: block; width: 100%; padding: 8px;
+  border: 1px solid var(--borders); border-radius: 6px;
+  background: var(--surface); color: var(--text-muted);
+  cursor: pointer; font-size: 0.8rem; text-align: center;
+}
+.match-cancel:hover { background: var(--bg); }
 /* Garden */
 .garden-area {
   background: var(--surface);
@@ -263,31 +312,20 @@ main {
   header h1 { font-size: 1rem; }
   .storage-grid { grid-template-columns: repeat(4, 1fr); }
   .exp-stack-item { width: 130px; }
-  .acquire-bar { flex-direction: column; align-items: stretch; }
-  .acquire-bar select, .acquire-bar button { width: 100%; }
 }
 </style>
 </head>
 <body>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.1 — Fixed drafting + expansion placement</span>
+  <span class="phase-tag">v1.2 — Click-first acquire</span>
 </header>
 <main>
   <!-- Display Area -->
   <div class="display-area" id="displayArea">
     <h2>Display Area — Round <span id="displayRound">1</span>/4</h2>
     <div class="display-row" id="displayRow"></div>
-    <div class="acquire-bar" id="acquireBar">
-      <label>Acquire:</label>
-      <select id="acquireType">
-        <option value="color">Color</option>
-        <option value="pattern">Pattern</option>
-      </select>
-      <select id="acquireValue"></select>
-      <button id="btnAcquire">Take Matching</button>
-      <span id="acquirePreview" style="font-size:0.75rem;color:var(--text-muted)"></span>
-    </div>
+  
   </div>
   <!-- Garden -->
   <div class="garden-area" id="gardenArea">
@@ -322,7 +360,7 @@ main {
     </div>
     <div class="panel">
       <h3>Actions</h3>
-      <div id="infoBar" class="info-bar">Choose an action: Acquire tiles, Place a tile, or Pass.</div>
+      <div id="infoBar" class="info-bar">Click a tile in the display to acquire, select a tile from storage to place, or pass.</div>
       <div class="actions" style="margin-top:6px">
         <button id="btnPlace" disabled>Place Tile</button>
         <button id="btnPlaceExp" disabled>Place Expansion</button>
@@ -1307,7 +1345,6 @@ function renderAll() {
   renderTileRef();
   updateInfoBar();
   updateButtons();
-  updateAcquireOptions();
   updateBagCounter();
 }
 
@@ -1369,6 +1406,7 @@ function renderScoringWheel() {
 function renderDisplay() {
   var row = document.getElementById('displayRow');
   while (row.firstChild) row.removeChild(row.firstChild);
+  var isHumanTurn = State.currentPlayer === 0 && !State.roundPassed[0];
 
   // Render the TOP expansion from the stack (the only one with tiles)
   if (State.expansionStack.length > 0) {
@@ -1379,7 +1417,7 @@ function renderDisplay() {
 
     var label = document.createElement('div');
     label.classList.add('exp-label');
-    label.textContent = 'Current Stack Top (' + State.expansionStack.length + ' remaining)';
+    label.textContent = 'Stack Top (' + State.expansionStack.length + ' remaining)';
     item.appendChild(label);
 
     if (topExp.tilesOnTop.length > 0) {
@@ -1389,9 +1427,15 @@ function renderDisplay() {
         var tile = topExp.tilesOnTop[t];
         var pip = document.createElement('div');
         pip.classList.add('exp-tile-pip');
+        if (isHumanTurn) pip.classList.add('clickable');
         pip.style.background = tile.colorHex;
         pip.textContent = tile.patternIcon;
-        pip.title = tile.colorName + ' ' + tile.patternName + ' (cost ' + tile.cost + ')';
+        pip.title = tile.colorName + ' ' + tile.patternName + ' (cost ' + tile.cost + ') — click to acquire';
+        if (isHumanTurn) {
+          (function(tileRef) {
+            pip.addEventListener('click', function() { showMatchModal(tileRef); });
+          })(tile);
+        }
         tilesDiv.appendChild(pip);
       }
       item.appendChild(tilesDiv);
@@ -1412,11 +1456,11 @@ function renderDisplay() {
     dItem.classList.add('exp-stack-item');
 
     if (dExp.faceUp) {
-      // Face-up expansion (no tiles, can be acquired)
       dItem.classList.add('face-up');
+      if (isHumanTurn) dItem.classList.add('clickable-exp');
       var dLabel = document.createElement('div');
       dLabel.classList.add('exp-label');
-      dLabel.textContent = 'Expansion (face-up)';
+      dLabel.textContent = '\u{1F3DB}\uFE0F Expansion — click to acquire';
       dItem.appendChild(dLabel);
 
       var combo = document.createElement('div');
@@ -1431,8 +1475,13 @@ function renderDisplay() {
       swatch.style.background = dExp.colorHex;
       swatch.style.marginTop = '4px';
       dItem.appendChild(swatch);
+
+      if (isHumanTurn) {
+        (function(expRef) {
+          dItem.addEventListener('click', function() { showExpansionMatchModal(expRef); });
+        })(dExp);
+      }
     } else {
-      // Display expansion with remaining tiles
       var dtLabel = document.createElement('div');
       dtLabel.classList.add('exp-label');
       dtLabel.textContent = 'In Display (' + dExp.tilesOnTop.length + ' tiles)';
@@ -1445,9 +1494,15 @@ function renderDisplay() {
           var dTile = dExp.tilesOnTop[dt];
           var dPip = document.createElement('div');
           dPip.classList.add('exp-tile-pip');
+          if (isHumanTurn) dPip.classList.add('clickable');
           dPip.style.background = dTile.colorHex;
           dPip.textContent = dTile.patternIcon;
-          dPip.title = dTile.colorName + ' ' + dTile.patternName + ' (cost ' + dTile.cost + ')';
+          dPip.title = dTile.colorName + ' ' + dTile.patternName + ' (cost ' + dTile.cost + ') — click to acquire';
+          if (isHumanTurn) {
+            (function(tileRef) {
+              dPip.addEventListener('click', function() { showMatchModal(tileRef); });
+            })(dTile);
+          }
           dtDiv.appendChild(dPip);
         }
         dItem.appendChild(dtDiv);
@@ -1462,7 +1517,7 @@ function renderDisplay() {
     emptyMsg.style.fontSize = '0.8rem';
     emptyMsg.style.color = '#999';
     emptyMsg.style.padding = '20px';
-    emptyMsg.textContent = 'Display empty — round ends when all players pass.';
+    emptyMsg.textContent = 'Display empty \u2014 round ends when all players pass.';
     row.appendChild(emptyMsg);
   }
 
@@ -1780,7 +1835,7 @@ function updateInfoBar() {
     bar.textContent = 'Selected: ' + tile.patternIcon + ' ' + tile.colorName + ' ' + tile.patternName +
       ' (' + costMsg + (affordable ? '' : ' — CANNOT AFFORD') + '). ' + valid + ' valid hex(es).';
   } else {
-    bar.textContent = 'Acquire tiles from display, select a tile to place, or pass.';
+    bar.textContent = 'Click a tile in the display to acquire, select a tile from storage to place, or pass.';
   }
 }
 
@@ -1792,29 +1847,167 @@ function updateButtons() {
   expBtn.disabled = !isHumanTurn || (State.expansionStorage.length === 0 && !State.placingExpansion);
   expBtn.textContent = State.placingExpansion ? 'Cancel Expansion' : 'Place Expansion';
   document.getElementById('btnPass').disabled = !isHumanTurn;
-  document.getElementById('btnAcquire').disabled = !isHumanTurn;
 }
 
-function updateAcquireOptions() {
-  var typeSelect = document.getElementById('acquireType');
-  var valueSelect = document.getElementById('acquireValue');
-  var preview = document.getElementById('acquirePreview');
+// === CLICK-FIRST ACQUIRE ===
+function formatMatchPreview(matches) {
+  var parts = [];
+  if (matches.tiles.length > 0) parts.push(matches.tiles.length + ' tile' + (matches.tiles.length > 1 ? 's' : ''));
+  if (matches.expansions.length > 0) parts.push(matches.expansions.length + ' exp');
+  return parts.join(' + ') || 'nothing';
+}
 
-  while (valueSelect.firstChild) valueSelect.removeChild(valueSelect.firstChild);
+function dismissMatchModal() {
+  var existing = document.getElementById('matchModalOverlay');
+  if (existing) existing.parentNode.removeChild(existing);
+}
 
-  var type = typeSelect.value;
-  var options = type === 'color' ? COLORS : PATTERNS;
+function buildModalShell(heading, subtitle) {
+  var overlay = document.createElement('div');
+  overlay.classList.add('match-modal-overlay');
+  overlay.setAttribute('id', 'matchModalOverlay');
+  var modal = document.createElement('div');
+  modal.classList.add('match-modal');
+  var h = document.createElement('h3');
+  h.textContent = heading;
+  modal.appendChild(h);
+  var sub = document.createElement('div');
+  sub.classList.add('match-subtitle');
+  sub.textContent = subtitle;
+  modal.appendChild(sub);
+  overlay.appendChild(modal);
+  return { overlay: overlay, modal: modal };
+}
 
-  for (var i = 0; i < options.length; i++) {
-    var opt = document.createElement('option');
-    opt.value = options[i].id;
-    opt.textContent = (options[i].icon ? options[i].icon + ' ' : '') + options[i].name;
-    valueSelect.appendChild(opt);
+function buildTilePreview(colorHex, icon, label1, label2) {
+  var wrap = document.createElement('div');
+  wrap.classList.add('match-tile-preview');
+  var sw = document.createElement('div');
+  sw.classList.add('match-tile-swatch');
+  sw.style.background = colorHex;
+  sw.textContent = icon;
+  wrap.appendChild(sw);
+  var info = document.createElement('div');
+  info.classList.add('match-tile-info');
+  var s = document.createElement('strong');
+  s.textContent = label1;
+  info.appendChild(s);
+  info.appendChild(document.createElement('br'));
+  info.appendChild(document.createTextNode(label2));
+  wrap.appendChild(info);
+  return wrap;
+}
+
+function buildMatchBtn(colorInfo, patternInfo, type, matches, overflow) {
+  var btn = document.createElement('button');
+  btn.classList.add('match-btn');
+  if (overflow) btn.disabled = true;
+  var lbl = document.createElement('span');
+  lbl.classList.add('match-btn-label');
+  if (type === 'color') {
+    var csw = document.createElement('span');
+    csw.style.cssText = 'display:inline-block;width:12px;height:12px;border-radius:3px;background:' + colorInfo.hex + ';margin-right:4px;vertical-align:middle';
+    lbl.appendChild(csw);
+    lbl.appendChild(document.createTextNode(' ' + colorInfo.name));
+  } else {
+    lbl.textContent = patternInfo.icon + ' ' + patternInfo.name;
   }
+  btn.appendChild(lbl);
+  var prev = document.createElement('span');
+  prev.classList.add('match-btn-preview');
+  prev.textContent = formatMatchPreview(matches);
+  if (overflow) prev.textContent += ' (no room!)';
+  btn.appendChild(prev);
+  return btn;
+}
 
-  // Preview
-  var matches = getAcquireMatches(type, valueSelect.value);
-  preview.textContent = '→ ' + matches.tiles.length + ' tile(s), ' + matches.expansions.length + ' expansion(s)';
+function showMatchModal(tile) {
+  if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
+  dismissMatchModal();
+
+  var colorInfo = COLOR_MAP[tile.color];
+  var patternInfo = PATTERN_MAP[tile.pattern];
+  var colorMatches = getAcquireMatches('color', tile.color);
+  var patternMatches = getAcquireMatches('pattern', tile.pattern);
+  var tileSpace = 12 - State.storage.length;
+  var expSpace = 2 - State.expansionStorage.length;
+  var colorOF = colorMatches.tiles.length > tileSpace || colorMatches.expansions.length > expSpace;
+  var patternOF = patternMatches.tiles.length > tileSpace || patternMatches.expansions.length > expSpace;
+
+  var shell = buildModalShell('How do you want to match?', 'All tiles matching your choice will be collected.');
+  var modal = shell.modal;
+  var overlay = shell.overlay;
+
+  modal.appendChild(buildTilePreview(
+    tile.colorHex || colorInfo.hex,
+    tile.patternIcon || patternInfo.icon,
+    (tile.colorName || colorInfo.name) + ' ' + (tile.patternName || patternInfo.name),
+    'Cost ' + (tile.cost || patternInfo.cost) + ' to place'
+  ));
+
+  var btnRow = document.createElement('div');
+  btnRow.classList.add('match-btn-row');
+  var cBtn = buildMatchBtn(colorInfo, patternInfo, 'color', colorMatches, colorOF);
+  var pBtn = buildMatchBtn(colorInfo, patternInfo, 'pattern', patternMatches, patternOF);
+  btnRow.appendChild(cBtn);
+  btnRow.appendChild(pBtn);
+  modal.appendChild(btnRow);
+
+  var cancel = document.createElement('button');
+  cancel.classList.add('match-cancel');
+  cancel.textContent = 'Cancel';
+  modal.appendChild(cancel);
+
+  document.body.appendChild(overlay);
+
+  cBtn.addEventListener('click', function() { dismissMatchModal(); if (executeAcquire('color', tile.color)) endTurn(); });
+  pBtn.addEventListener('click', function() { dismissMatchModal(); if (executeAcquire('pattern', tile.pattern)) endTurn(); });
+  cancel.addEventListener('click', function() { dismissMatchModal(); });
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) dismissMatchModal(); });
+}
+
+function showExpansionMatchModal(exp) {
+  if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
+  dismissMatchModal();
+
+  var colorInfo = COLOR_MAP[exp.color];
+  var patternInfo = PATTERN_MAP[exp.pattern];
+  var colorMatches = getAcquireMatches('color', exp.color);
+  var patternMatches = getAcquireMatches('pattern', exp.pattern);
+  var tileSpace = 12 - State.storage.length;
+  var expSpace = 2 - State.expansionStorage.length;
+  var colorOF = colorMatches.tiles.length > tileSpace || colorMatches.expansions.length > expSpace;
+  var patternOF = patternMatches.tiles.length > tileSpace || patternMatches.expansions.length > expSpace;
+
+  var shell = buildModalShell('Acquire this expansion — match by:', 'The expansion and all matching tiles will be collected.');
+  var modal = shell.modal;
+  var overlay = shell.overlay;
+
+  modal.appendChild(buildTilePreview(
+    colorInfo.hex, patternInfo.icon,
+    '\u{1F3DB}\uFE0F ' + (exp.colorName || colorInfo.name) + ' ' + (exp.patternName || patternInfo.name),
+    'Face-up expansion'
+  ));
+
+  var btnRow = document.createElement('div');
+  btnRow.classList.add('match-btn-row');
+  var cBtn = buildMatchBtn(colorInfo, patternInfo, 'color', colorMatches, colorOF);
+  var pBtn = buildMatchBtn(colorInfo, patternInfo, 'pattern', patternMatches, patternOF);
+  btnRow.appendChild(cBtn);
+  btnRow.appendChild(pBtn);
+  modal.appendChild(btnRow);
+
+  var cancel = document.createElement('button');
+  cancel.classList.add('match-cancel');
+  cancel.textContent = 'Cancel';
+  modal.appendChild(cancel);
+
+  document.body.appendChild(overlay);
+
+  cBtn.addEventListener('click', function() { dismissMatchModal(); if (executeAcquire('color', exp.color)) endTurn(); });
+  pBtn.addEventListener('click', function() { dismissMatchModal(); if (executeAcquire('pattern', exp.pattern)) endTurn(); });
+  cancel.addEventListener('click', function() { dismissMatchModal(); });
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) dismissMatchModal(); });
 }
 
 function updateBagCounter() {
@@ -2330,27 +2523,6 @@ document.getElementById('btnPlace').addEventListener('click', function() {
       addLog('No valid placements for this tile!');
     }
   }
-});
-
-document.getElementById('btnAcquire').addEventListener('click', function() {
-  if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
-  var type = document.getElementById('acquireType').value;
-  var value = document.getElementById('acquireValue').value;
-  if (executeAcquire(type, value)) {
-    endTurn();
-  }
-});
-
-document.getElementById('acquireType').addEventListener('change', function() {
-  updateAcquireOptions();
-});
-
-document.getElementById('acquireValue').addEventListener('change', function() {
-  var type = document.getElementById('acquireType').value;
-  var value = document.getElementById('acquireValue').value;
-  var matches = getAcquireMatches(type, value);
-  document.getElementById('acquirePreview').textContent =
-    '→ ' + matches.tiles.length + ' tile(s), ' + matches.expansions.length + ' expansion(s)';
 });
 
 // === GAME OVER OVERLAY ===
