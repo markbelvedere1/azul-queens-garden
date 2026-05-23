@@ -637,7 +637,6 @@ function drawTilesOntoTopExpansion() {
 // === ACQUIRE ACTION ===
 function getAcquireMatches(type, value) {
   var matchedTiles = [];
-  var matchedExpansions = [];
 
   // Only check tiles on the TOP expansion of the stack
   if (State.expansionStack.length > 0) {
@@ -650,10 +649,9 @@ function getAcquireMatches(type, value) {
     }
   }
 
-  // Check display area expansions: tiles on non-face-up expansions + face-up expansion acquisition
+  // Check display area expansions: tiles on non-face-up expansions only
   for (var d = 0; d < State.displayExpansions.length; d++) {
     var dExp = State.displayExpansions[d];
-    // Tiles remaining on display expansions (moved from stack but not yet empty)
     if (dExp.tilesOnTop && dExp.tilesOnTop.length > 0 && !dExp.faceUp) {
       for (var dt = 0; dt < dExp.tilesOnTop.length; dt++) {
         var dTile = dExp.tilesOnTop[dt];
@@ -662,34 +660,23 @@ function getAcquireMatches(type, value) {
         }
       }
     }
-    // Face-up expansions can be acquired (for expansion storage)
-    if (dExp.faceUp) {
-      if ((type === 'color' && dExp.color === value) || (type === 'pattern' && dExp.pattern === value)) {
-        matchedExpansions.push({ source: 'display', expIdx: d, exp: dExp });
-      }
-    }
   }
 
-  return { tiles: matchedTiles, expansions: matchedExpansions };
+  return { tiles: matchedTiles, expansions: [] };
 }
 
 function executeAcquire(type, value) {
   var matches = getAcquireMatches(type, value);
 
-  if (matches.tiles.length === 0 && matches.expansions.length === 0) {
-    addLog('No matching tiles or expansions found!');
+  if (matches.tiles.length === 0) {
+    addLog('No matching tiles found!');
     return false;
   }
 
   var tileSpace = 12 - State.storage.length;
-  var expSpace = 2 - State.expansionStorage.length;
 
   if (matches.tiles.length > tileSpace) {
     addLog('Not enough storage! Need ' + matches.tiles.length + ' slots, have ' + tileSpace + '.');
-    return false;
-  }
-  if (matches.expansions.length > expSpace) {
-    addLog('Not enough expansion storage!');
     return false;
   }
 
@@ -743,21 +730,23 @@ function executeAcquire(type, value) {
     }
   }
 
-  // Collect matching face-up expansions
-  var expsCollected = 0;
-  matches.expansions.sort(function(a, b) { return b.expIdx - a.expIdx; });
-  for (var e = 0; e < matches.expansions.length; e++) {
-    var em = matches.expansions[e];
-    var currentIdx = State.displayExpansions.indexOf(em.exp);
-    if (currentIdx >= 0) {
-      State.expansionStorage.push(em.exp);
-      State.displayExpansions.splice(currentIdx, 1);
-      expsCollected++;
-    }
-  }
-
   var typeName = type === 'color' ? COLOR_MAP[value].name : PATTERN_MAP[value].name;
-  addLog('Acquired ' + tilesCollected + ' tile(s) + ' + expsCollected + ' expansion(s) matching ' + typeName + '.');
+  addLog('Acquired ' + tilesCollected + ' tile(s) matching ' + typeName + '.');
+  return true;
+}
+
+// Pick up a single face-up expansion from the display (separate action from tile acquire)
+function executeAcquireExpansion(expIndex) {
+  if (expIndex < 0 || expIndex >= State.displayExpansions.length) return false;
+  var exp = State.displayExpansions[expIndex];
+  if (!exp.faceUp) return false;
+  if (State.expansionStorage.length >= 2) {
+    addLog('Expansion storage full (max 2)!');
+    return false;
+  }
+  State.expansionStorage.push(exp);
+  State.displayExpansions.splice(expIndex, 1);
+  addLog('Picked up expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName);
   return true;
 }
 
@@ -1477,9 +1466,9 @@ function renderDisplay() {
       dItem.appendChild(swatch);
 
       if (isHumanTurn) {
-        (function(expRef) {
-          dItem.addEventListener('click', function() { showExpansionMatchModal(expRef); });
-        })(dExp);
+        (function(expRef, idx) {
+          dItem.addEventListener('click', function() { showExpansionPickup(expRef, idx); });
+        })(dExp, j);
       }
     } else {
       var dtLabel = document.createElement('div');
@@ -1851,10 +1840,8 @@ function updateButtons() {
 
 // === CLICK-FIRST ACQUIRE ===
 function formatMatchPreview(matches) {
-  var parts = [];
-  if (matches.tiles.length > 0) parts.push(matches.tiles.length + ' tile' + (matches.tiles.length > 1 ? 's' : ''));
-  if (matches.expansions.length > 0) parts.push(matches.expansions.length + ' exp');
-  return parts.join(' + ') || 'nothing';
+  if (matches.tiles.length > 0) return matches.tiles.length + ' tile' + (matches.tiles.length > 1 ? 's' : '');
+  return 'nothing';
 }
 
 function dismissMatchModal() {
@@ -1930,9 +1917,8 @@ function showMatchModal(tile) {
   var colorMatches = getAcquireMatches('color', tile.color);
   var patternMatches = getAcquireMatches('pattern', tile.pattern);
   var tileSpace = 12 - State.storage.length;
-  var expSpace = 2 - State.expansionStorage.length;
-  var colorOF = colorMatches.tiles.length > tileSpace || colorMatches.expansions.length > expSpace;
-  var patternOF = patternMatches.tiles.length > tileSpace || patternMatches.expansions.length > expSpace;
+  var colorOF = colorMatches.tiles.length > tileSpace;
+  var patternOF = patternMatches.tiles.length > tileSpace;
 
   var shell = buildModalShell('How do you want to match?', 'All tiles matching your choice will be collected.');
   var modal = shell.modal;
@@ -1966,35 +1952,42 @@ function showMatchModal(tile) {
   overlay.addEventListener('click', function(e) { if (e.target === overlay) dismissMatchModal(); });
 }
 
-function showExpansionMatchModal(exp) {
+function showExpansionPickup(exp, displayIdx) {
   if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
   dismissMatchModal();
 
+  if (State.expansionStorage.length >= 2) {
+    addLog('Expansion storage full (max 2)!');
+    return;
+  }
+
   var colorInfo = COLOR_MAP[exp.color];
   var patternInfo = PATTERN_MAP[exp.pattern];
-  var colorMatches = getAcquireMatches('color', exp.color);
-  var patternMatches = getAcquireMatches('pattern', exp.pattern);
-  var tileSpace = 12 - State.storage.length;
-  var expSpace = 2 - State.expansionStorage.length;
-  var colorOF = colorMatches.tiles.length > tileSpace || colorMatches.expansions.length > expSpace;
-  var patternOF = patternMatches.tiles.length > tileSpace || patternMatches.expansions.length > expSpace;
 
-  var shell = buildModalShell('Acquire this expansion — match by:', 'The expansion and all matching tiles will be collected.');
+  var shell = buildModalShell('Pick up this expansion?', 'It will be added to your expansion storage.');
   var modal = shell.modal;
   var overlay = shell.overlay;
 
   modal.appendChild(buildTilePreview(
     colorInfo.hex, patternInfo.icon,
     '\u{1F3DB}\uFE0F ' + (exp.colorName || colorInfo.name) + ' ' + (exp.patternName || patternInfo.name),
-    'Face-up expansion'
+    'Face-up expansion (' + State.expansionStorage.length + '/2 in storage)'
   ));
 
   var btnRow = document.createElement('div');
   btnRow.classList.add('match-btn-row');
-  var cBtn = buildMatchBtn(colorInfo, patternInfo, 'color', colorMatches, colorOF);
-  var pBtn = buildMatchBtn(colorInfo, patternInfo, 'pattern', patternMatches, patternOF);
-  btnRow.appendChild(cBtn);
-  btnRow.appendChild(pBtn);
+
+  var pickBtn = document.createElement('button');
+  pickBtn.classList.add('match-btn');
+  var pickLbl = document.createElement('span');
+  pickLbl.classList.add('match-btn-label');
+  pickLbl.textContent = 'Pick Up';
+  pickBtn.appendChild(pickLbl);
+  var pickPrev = document.createElement('span');
+  pickPrev.classList.add('match-btn-preview');
+  pickPrev.textContent = 'add to storage';
+  pickBtn.appendChild(pickPrev);
+  btnRow.appendChild(pickBtn);
   modal.appendChild(btnRow);
 
   var cancel = document.createElement('button');
@@ -2004,8 +1997,10 @@ function showExpansionMatchModal(exp) {
 
   document.body.appendChild(overlay);
 
-  cBtn.addEventListener('click', function() { dismissMatchModal(); if (executeAcquire('color', exp.color)) endTurn(); });
-  pBtn.addEventListener('click', function() { dismissMatchModal(); if (executeAcquire('pattern', exp.pattern)) endTurn(); });
+  pickBtn.addEventListener('click', function() {
+    dismissMatchModal();
+    if (executeAcquireExpansion(displayIdx)) endTurn();
+  });
   cancel.addEventListener('click', function() { dismissMatchModal(); });
   overlay.addEventListener('click', function(e) { if (e.target === overlay) dismissMatchModal(); });
 }
@@ -2161,20 +2156,21 @@ function aiTurn() {
         ade.faceUp = true;
       }
     }
-    // Collect matching face-up expansions
-    var expCollected = 0;
-    matches.expansions.sort(function(a, b) { return b.expIdx - a.expIdx; });
-    for (var e = 0; e < matches.expansions.length; e++) {
-      var em = matches.expansions[e];
-      var currentIdx = State.displayExpansions.indexOf(em.exp);
-      if (currentIdx >= 0 && aiExpStorage.length < 2) {
-        aiExpStorage.push(em.exp);
-        State.displayExpansions.splice(currentIdx, 1);
-        expCollected++;
-      }
-    }
     var attrName = action.attrType === 'color' ? COLOR_MAP[action.attrValue].name : PATTERN_MAP[action.attrValue].name;
-    addLog(pName + ' acquires ' + collected + ' tile(s)' + (expCollected > 0 ? ' + ' + expCollected + ' exp' : '') + ' (' + attrName + ')');
+    addLog(pName + ' acquires ' + collected + ' tile(s) (' + attrName + ')');
+
+  } else if (action.type === 'acquireExp') {
+    // AI picks up a face-up expansion (separate action)
+    var aeIdx = action.expIndex;
+    if (aeIdx >= 0 && aeIdx < State.displayExpansions.length && State.displayExpansions[aeIdx].faceUp && aiExpStorage.length < 2) {
+      var pickedExp = State.displayExpansions[aeIdx];
+      aiExpStorage.push(pickedExp);
+      State.displayExpansions.splice(aeIdx, 1);
+      addLog(pName + ' picks up expansion: ' + pickedExp.colorName + ' ' + pickedExp.patternName);
+    } else {
+      addLog(pName + ' passes.');
+      State.roundPassed[p] = true;
+    }
 
   } else if (action.type === 'place') {
     // AI places a tile from their storage
@@ -2276,6 +2272,15 @@ function decideAiAction(playerIdx, storage, expStorage, garden) {
   // If has expansion and garden is small, place expansion
   if (expStorage.length > 0 && countGardenSize(garden) < 25) {
     return { type: 'placeExp' };
+  }
+
+  // Try to pick up a face-up expansion if we have room
+  if (expStorage.length < 2) {
+    for (var ei = 0; ei < State.displayExpansions.length; ei++) {
+      if (State.displayExpansions[ei].faceUp) {
+        return { type: 'acquireExp', expIndex: ei };
+      }
+    }
   }
 
   // Try to acquire
