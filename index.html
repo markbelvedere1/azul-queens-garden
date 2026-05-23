@@ -414,6 +414,9 @@ function getStateSnapshot() {
       expansionStorageCount: State.expansionStorage ? State.expansionStorage.length : '?',
       gardenSize: State.garden ? State.garden.size : '?',
       expansionCandidates: State.expansionCandidates ? State.expansionCandidates.length : 0,
+      paymentMode: State.paymentMode,
+      paymentNeeded: State.paymentNeeded,
+      paymentSelected: State.paymentSelected ? State.paymentSelected.length : 0,
       roundPassed: State.roundPassed,
       scores: State.scores
     }, null, 2);
@@ -657,6 +660,12 @@ var State = {
   expansionTile: null,
   expansionCandidates: [],
   roundPassed: [],  // players who have passed this round
+  // Payment selection mode
+  paymentMode: false,       // true when player is choosing payment tiles
+  paymentNeeded: 0,         // number of tiles to select
+  paymentSelected: [],      // [{source:'storage'|'expansion', idx:number}]
+  paymentTargetTile: null,  // tile being placed (for matching validation)
+  paymentCallback: null,    // function(selectedIndices) called when payment confirmed
   // Scoring wheel (Phase 4)
   scoringWheel: [],     // 12 attributes (6 colors + 6 patterns), shuffled
   wheelPosition: 0,     // current position in the wheel
@@ -676,6 +685,11 @@ function initGame() {
   State.expansionTilePlacing = false;
   State.expansionTileOptions = [];
   State.expansionTile = null;
+  State.paymentMode = false;
+  State.paymentNeeded = 0;
+  State.paymentSelected = [];
+  State.paymentTargetTile = null;
+  State.paymentCallback = null;
   State.log = [];
   State.phase = 'acquire';
   State.roundPassed = [false, false, false, false];
@@ -1021,6 +1035,86 @@ function tryMixedPayment(candidates, needed) {
   return result.length >= needed ? result : null;
 }
 
+// === PAYMENT SELECTION MODE ===
+// Check if a tile can pay for the target tile (shares color or pattern, or is joker)
+function isValidPayment(payTile, targetTile) {
+  if (payTile.isJoker) return true;
+  return payTile.color === targetTile.color || payTile.pattern === targetTile.pattern;
+}
+
+// Enter payment selection mode. Player picks which tiles to spend.
+// targetTile: the tile/expansion being placed (has .color, .pattern)
+// needed: number of payment tiles required
+// callback: function(storageIndices, expansionIndices) called when confirmed
+function enterPaymentMode(targetTile, needed, callback) {
+  State.paymentMode = true;
+  State.paymentNeeded = needed;
+  State.paymentSelected = [];
+  State.paymentTargetTile = targetTile;
+  State.paymentCallback = callback;
+  addLog('SELECT ' + needed + ' payment tile(s) — click tiles in storage or expansion slots that match color or pattern.');
+  renderAll();
+}
+
+function cancelPaymentMode() {
+  State.paymentMode = false;
+  State.paymentNeeded = 0;
+  State.paymentSelected = [];
+  State.paymentTargetTile = null;
+  State.paymentCallback = null;
+  renderAll();
+}
+
+function togglePaymentTile(source, idx) {
+  if (!State.paymentMode) return;
+  // Check if already selected — toggle off
+  for (var i = 0; i < State.paymentSelected.length; i++) {
+    if (State.paymentSelected[i].source === source && State.paymentSelected[i].idx === idx) {
+      State.paymentSelected.splice(i, 1);
+      renderAll();
+      return;
+    }
+  }
+  // Validate this tile can pay
+  var tile = source === 'storage' ? State.storage[idx] : State.expansionStorage[idx];
+  if (!tile) return;
+  if (!isValidPayment(tile, State.paymentTargetTile)) {
+    addLog('That tile doesn\'t match — must share color or pattern with the placed tile.');
+    return;
+  }
+  // Don't allow selecting more than needed
+  if (State.paymentSelected.length >= State.paymentNeeded) {
+    addLog('Already selected enough payment tiles. Click a selected tile to deselect, or confirm.');
+    return;
+  }
+  State.paymentSelected.push({ source: source, idx: idx });
+  renderAll();
+}
+
+function confirmPayment() {
+  if (!State.paymentMode) return;
+  if (State.paymentSelected.length !== State.paymentNeeded) {
+    addLog('Need exactly ' + State.paymentNeeded + ' payment tile(s). Selected: ' + State.paymentSelected.length);
+    return;
+  }
+  var storageIndices = [];
+  var expansionIndices = [];
+  for (var i = 0; i < State.paymentSelected.length; i++) {
+    if (State.paymentSelected[i].source === 'storage') {
+      storageIndices.push(State.paymentSelected[i].idx);
+    } else {
+      expansionIndices.push(State.paymentSelected[i].idx);
+    }
+  }
+  var cb = State.paymentCallback;
+  State.paymentMode = false;
+  State.paymentNeeded = 0;
+  State.paymentSelected = [];
+  State.paymentTargetTile = null;
+  State.paymentCallback = null;
+  if (cb) cb(storageIndices, expansionIndices);
+}
+
 // === PLACE TILE ===
 function placeTile(q, r, tileIndex) {
   try {
@@ -1029,22 +1123,54 @@ function placeTile(q, r, tileIndex) {
   if (!canPlaceTile(q, r, tile)) return false;
 
   var cost = getPaymentCost(tile);
-  var paymentIndices = [];
 
+  if (cost > 1 && State.currentPlayer === 0) {
+    // Human player: enter payment selection mode
+    var needed = cost - 1;
+    var placeQ = q, placeR = r, placeTileIdx = tileIndex;
+    enterPaymentMode(tile, needed, function(storageIndices, expansionIndices) {
+      var cell = State.garden.get(hexKey(placeQ, placeR));
+      cell.tile = tile;
+
+      // Remove storage tiles (placed tile + payment tiles)
+      var toRemoveStorage = [placeTileIdx].concat(storageIndices);
+      toRemoveStorage.sort(function(a, b) { return b - a; });
+      for (var i = 0; i < toRemoveStorage.length; i++) {
+        State.storage.splice(toRemoveStorage[i], 1);
+      }
+      // Remove expansion payment tiles
+      if (expansionIndices.length > 0) {
+        expansionIndices.sort(function(a, b) { return b - a; });
+        for (var j = 0; j < expansionIndices.length; j++) {
+          State.expansionStorage.splice(expansionIndices[j], 1);
+        }
+      }
+
+      var totalPaid = storageIndices.length + expansionIndices.length;
+      addLog('Placed ' + tile.patternIcon + ' ' + tile.colorName + ' ' + tile.patternName + ' at (' + placeQ + ',' + placeR + ') (paid ' + totalPaid + ' tile(s))');
+      checkFeatureSurrounded(placeQ, placeR);
+      State.selectedStorageTile = null;
+      State.selectedHex = null;
+      renderAll();
+      endTurn();
+    });
+    return false; // Don't end turn yet -- waiting for payment
+  }
+
+  // Free placement or AI: auto-pay
+  var paymentIndices = [];
   if (cost > 1) {
     var options = getPaymentOptions(tileIndex);
     if (options.length === 0) {
       addLog('Cannot afford to place this tile! Need ' + (cost - 1) + ' payment tile(s).');
       return false;
     }
-    paymentIndices = options[0]; // auto-select first valid payment
+    paymentIndices = options[0];
   }
 
-  // Place the tile
   var cell = State.garden.get(hexKey(q, r));
   cell.tile = tile;
 
-  // Remove payment tiles + placed tile (sort indices descending to avoid shift issues)
   var toRemove = [tileIndex].concat(paymentIndices);
   toRemove.sort(function(a, b) { return b - a; });
   for (var i = 0; i < toRemove.length; i++) {
@@ -1061,7 +1187,6 @@ function placeTile(q, r, tileIndex) {
   return true;
   } catch (e) { showError(e.message, e.stack, 'placeTile(q=' + q + ',r=' + r + ')'); return false; }
 }
-
 // === EXPANSION PLACEMENT (Phase 3) ===
 
 // Find all valid centers for a 7-hex flower expansion placement.
@@ -1214,8 +1339,82 @@ function confirmExpansionPlacement(q, r) {
   if (State.expansionStorage.length === 0) return false;
   var exp = State.expansionStorage[0];
 
-  // Check and pay cost
   var cost = getExpansionCost(exp);
+
+  // Helper to finish placement after payment (or if free)
+  function finishExpansionPlacement(storagePayIdx, expansionPayIdx) {
+    // Remove storage payment tiles
+    if (storagePayIdx && storagePayIdx.length > 0) {
+      storagePayIdx.sort(function(a, b) { return b - a; });
+      for (var p = 0; p < storagePayIdx.length; p++) {
+        State.storage.splice(storagePayIdx[p], 1);
+      }
+    }
+    // Remove expansion payment tiles
+    if (expansionPayIdx && expansionPayIdx.length > 0) {
+      expansionPayIdx.sort(function(a, b) { return b - a; });
+      for (var ep = 0; ep < expansionPayIdx.length; ep++) {
+        State.expansionStorage.splice(expansionPayIdx[ep], 1);
+      }
+    }
+
+    // Place the full 7-hex flower
+    var cluster = [{ q: q, r: r, feature: 'pavilion' }];
+    var nbrs = hexNeighbors(q, r);
+    for (var i = 0; i < nbrs.length; i++) {
+      cluster.push({ q: nbrs[i].q, r: nbrs[i].r, feature: null });
+    }
+    for (var j = 0; j < cluster.length; j++) {
+      var h = cluster[j];
+      State.garden.set(hexKey(h.q, h.r), {
+        q: h.q, r: h.r, tile: null, feature: h.feature
+      });
+    }
+
+    var expTile = {
+      id: 2000 + exp.id,
+      color: exp.color,
+      colorName: exp.colorName,
+      colorHex: exp.colorHex,
+      pattern: exp.pattern,
+      patternName: exp.patternName,
+      patternIcon: exp.patternIcon,
+      cost: cost,
+      isJoker: false
+    };
+
+    State.expansionTilePlacing = true;
+    State.expansionTileOptions = nbrs.map(function(n) { return { q: n.q, r: n.r }; });
+    State.expansionTile = expTile;
+
+    var totalPaid = (storagePayIdx ? storagePayIdx.length : 0) + (expansionPayIdx ? expansionPayIdx.length : 0);
+    var payMsg = totalPaid > 0 ? ' (paid ' + totalPaid + ' tile(s))' : '';
+    // Remove the expansion from storage (index 0 since we always place the first one)
+    // But we need to find it — it might have shifted if expansion payment tiles were removed
+    for (var si = 0; si < State.expansionStorage.length; si++) {
+      if (State.expansionStorage[si].id === exp.id) {
+        State.expansionStorage.splice(si, 1);
+        break;
+      }
+    }
+    State.placingExpansion = false;
+    State.expansionCandidates = [];
+    addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + payMsg + ' — now click an outer hex to place the tile.');
+    renderAll();
+  }
+
+  if (cost > 1 && State.currentPlayer === 0) {
+    // Human player: enter payment selection mode
+    State.placingExpansion = false;
+    State.expansionCandidates = [];
+    enterPaymentMode(exp, cost - 1, function(storageIndices, expansionIndices) {
+      finishExpansionPlacement(storageIndices, expansionIndices);
+    });
+    renderAll();
+    return false;
+  }
+
+  // Free or AI: auto-pay from storage only
   if (cost > 1) {
     var paymentIndices = getExpansionPayment(exp);
     if (!paymentIndices) {
@@ -1223,53 +1422,11 @@ function confirmExpansionPlacement(q, r) {
       cancelExpansionPlacement();
       return false;
     }
-    // Remove payment tiles (highest index first to preserve indices)
-    paymentIndices.sort(function(a, b) { return b - a; });
-    for (var p = 0; p < paymentIndices.length; p++) {
-      State.storage.splice(paymentIndices[p], 1);
-    }
+    finishExpansionPlacement(paymentIndices, []);
+  } else {
+    finishExpansionPlacement([], []);
   }
-
-  // Place the full 7-hex flower: center (pavilion) + 6 neighbors
-  var cluster = [{ q: q, r: r, feature: 'pavilion' }];
-  var nbrs = hexNeighbors(q, r);
-  for (var i = 0; i < nbrs.length; i++) {
-    cluster.push({ q: nbrs[i].q, r: nbrs[i].r, feature: null });
-  }
-
-  // Add all 7 hexes to the garden (no tile yet — player picks outer hex next)
-  for (var j = 0; j < cluster.length; j++) {
-    var h = cluster[j];
-    State.garden.set(hexKey(h.q, h.r), {
-      q: h.q, r: h.r, tile: null, feature: h.feature
-    });
-  }
-
-  // Create the expansion's tile
-  var expTile = {
-    id: 2000 + exp.id,
-    color: exp.color,
-    colorName: exp.colorName,
-    colorHex: exp.colorHex,
-    pattern: exp.pattern,
-    patternName: exp.patternName,
-    patternIcon: exp.patternIcon,
-    cost: cost,
-    isJoker: false
-  };
-
-  // Enter tile placement sub-mode: player chooses which outer hex gets the tile
-  State.expansionTilePlacing = true;
-  State.expansionTileOptions = nbrs.map(function(n) { return { q: n.q, r: n.r }; });
-  State.expansionTile = expTile;
-
-  var payMsg = cost > 1 ? ' (paid ' + (cost - 1) + ' tile(s))' : '';
-  State.expansionStorage.splice(0, 1);
-  State.placingExpansion = false;
-  State.expansionCandidates = [];
-  addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + payMsg + ' — now click an outer hex to place the tile.');
-  renderAll();
-  return false; // Don't end turn yet — need tile placement
+  return false;
   } catch (e) { showError(e.message, e.stack, 'confirmExpansionPlacement(q=' + q + ',r=' + r + ')'); return false; }
 }
 
@@ -1940,6 +2097,13 @@ var SVG_PATTERNS = {
   container.appendChild(svg);
 }
 
+function isPaymentSelected(source, idx) {
+  for (var i = 0; i < State.paymentSelected.length; i++) {
+    if (State.paymentSelected[i].source === source && State.paymentSelected[i].idx === idx) return true;
+  }
+  return false;
+}
+
 function renderStorage() {
   var grid = document.getElementById('storageGrid');
   while (grid.firstChild) grid.removeChild(grid.firstChild);
@@ -1951,7 +2115,24 @@ function renderStorage() {
     if (i < State.storage.length) {
       var tile = State.storage[i];
       slot.classList.add('has-tile');
-      if (State.selectedStorageTile === i) slot.classList.add('selected');
+
+      if (State.paymentMode) {
+        // Payment mode: highlight eligible, mark selected
+        var eligible = isValidPayment(tile, State.paymentTargetTile);
+        if (isPaymentSelected('storage', i)) {
+          slot.style.outline = '3px solid #ff6b6b';
+          slot.style.outlineOffset = '-2px';
+          slot.style.background = '#2d1a1a';
+        } else if (eligible) {
+          slot.style.outline = '2px dashed #ffd700';
+          slot.style.outlineOffset = '-2px';
+          slot.style.cursor = 'pointer';
+        } else {
+          slot.style.opacity = '0.35';
+        }
+      } else {
+        if (State.selectedStorageTile === i) slot.classList.add('selected');
+      }
 
       var pip = document.createElement('div');
       pip.classList.add('tile-pip');
@@ -1961,7 +2142,13 @@ function renderStorage() {
       slot.appendChild(pip);
 
       (function(idx) {
-        slot.addEventListener('click', function() { handleStorageClick(idx); });
+        slot.addEventListener('click', function() {
+          if (State.paymentMode) {
+            togglePaymentTile('storage', idx);
+          } else {
+            handleStorageClick(idx);
+          }
+        });
       })(i);
     }
 
@@ -1971,10 +2158,32 @@ function renderStorage() {
   document.getElementById('storageCount').textContent = State.storage.length;
   document.getElementById('expCount').textContent = State.expansionStorage.length;
 
+  // Payment mode: show confirm/cancel buttons
+  var existingPayBar = document.getElementById('paymentBar');
+  if (existingPayBar) existingPayBar.parentNode.removeChild(existingPayBar);
+  if (State.paymentMode) {
+    var payBar = document.createElement('div');
+    payBar.id = 'paymentBar';
+    payBar.style.cssText = 'display:flex;gap:8px;align-items:center;padding:6px 0;font-size:0.8rem;flex-wrap:wrap;';
+    payBar.innerHTML = '<span style="color:#ffd700;font-weight:600;">Payment: ' + State.paymentSelected.length + '/' + State.paymentNeeded + ' selected</span>';
+    var confirmBtn = document.createElement('button');
+    confirmBtn.textContent = 'Confirm Payment';
+    confirmBtn.disabled = State.paymentSelected.length !== State.paymentNeeded;
+    confirmBtn.style.cssText = 'padding:4px 12px;border-radius:4px;border:none;background:#2d6a4f;color:#fff;cursor:pointer;font-size:0.75rem;';
+    if (confirmBtn.disabled) confirmBtn.style.opacity = '0.5';
+    confirmBtn.addEventListener('click', confirmPayment);
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding:4px 12px;border-radius:4px;border:none;background:#8b0000;color:#fff;cursor:pointer;font-size:0.75rem;';
+    cancelBtn.addEventListener('click', cancelPaymentMode);
+    payBar.appendChild(confirmBtn);
+    payBar.appendChild(cancelBtn);
+    grid.parentNode.insertBefore(payBar, grid.nextSibling);
+  }
+
   // Expansion slots
   for (var e = 0; e < 2; e++) {
     var eSlot = document.getElementById('expSlot' + e);
-    // Clone to remove stale event listeners
     var freshSlot = eSlot.cloneNode(false);
     eSlot.parentNode.replaceChild(freshSlot, eSlot);
     freshSlot.className = 'expansion-slot';
@@ -1983,13 +2192,31 @@ function renderStorage() {
       freshSlot.classList.add('has-exp');
       freshSlot.textContent = exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName;
       freshSlot.id = 'expSlot' + e;
+
+      if (State.paymentMode) {
+        var expEligible = isValidPayment(exp, State.paymentTargetTile);
+        if (isPaymentSelected('expansion', e)) {
+          freshSlot.style.outline = '3px solid #ff6b6b';
+          freshSlot.style.background = '#2d1a1a';
+        } else if (expEligible) {
+          freshSlot.style.outline = '2px dashed #ffd700';
+          freshSlot.style.cursor = 'pointer';
+        } else {
+          freshSlot.style.opacity = '0.35';
+        }
+      }
+
       (function(slotIdx) {
         freshSlot.addEventListener('click', function() {
-          if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
-          if (State.placingExpansion) {
-            cancelExpansionPlacement();
+          if (State.paymentMode) {
+            togglePaymentTile('expansion', slotIdx);
           } else {
-            enterExpansionPlacementMode();
+            if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
+            if (State.placingExpansion) {
+              cancelExpansionPlacement();
+            } else {
+              enterExpansionPlacementMode();
+            }
           }
         });
       })(e);
@@ -2083,6 +2310,10 @@ function renderTileRef() {
 
 function updateInfoBar() {
   var bar = document.getElementById('infoBar');
+  if (State.paymentMode) {
+    bar.textContent = 'PAYMENT: Select ' + State.paymentNeeded + ' tile(s) matching color or pattern. (' + State.paymentSelected.length + '/' + State.paymentNeeded + ' selected)';
+    return;
+  }
   if (State.currentPlayer !== 0) {
     bar.textContent = 'Waiting for ' + State.players[State.currentPlayer].name + '...';
     return;
@@ -2306,6 +2537,7 @@ function handleStorageClick(index) {
 function handleHexClick(q, r) {
   try {
   if (State.currentPlayer !== 0) return;
+  if (State.paymentMode) return; // Block hex clicks during payment selection
 
   // Expansion tile placement sub-mode: choose which outer hex gets the tile
   if (State.expansionTilePlacing) {
