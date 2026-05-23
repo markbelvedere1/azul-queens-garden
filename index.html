@@ -1718,6 +1718,16 @@ function renderStorage() {
       var exp = State.expansionStorage[e];
       eSlot.classList.add('has-exp');
       eSlot.textContent = exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName;
+      (function(slotIdx) {
+        eSlot.addEventListener('click', function() {
+          if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
+          if (State.placingExpansion) {
+            cancelExpansionPlacement();
+          } else {
+            enterExpansionPlacementMode();
+          }
+        });
+      })(e);
     } else {
       eSlot.textContent = 'Empty';
     }
