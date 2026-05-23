@@ -552,6 +552,9 @@ var State = {
   log: [],
   phase: 'acquire', // acquire | place | pass | roundEnd
   placingExpansion: false,
+  expansionTilePlacing: false,
+  expansionTileOptions: [],
+  expansionTile: null,
   expansionCandidates: [],
   roundPassed: [],  // players who have passed this round
   // Scoring wheel (Phase 4)
@@ -570,6 +573,9 @@ function initGame() {
   State.selectedHex = null;
   State.placingExpansion = false;
   State.expansionCandidates = [];
+  State.expansionTilePlacing = false;
+  State.expansionTileOptions = [];
+  State.expansionTile = null;
   State.log = [];
   State.phase = 'acquire';
   State.roundPassed = [false, false, false, false];
@@ -1049,12 +1055,70 @@ function enterExpansionPlacementMode() {
 function cancelExpansionPlacement() {
   State.placingExpansion = false;
   State.expansionCandidates = [];
+  State.expansionTilePlacing = false;
+  State.expansionTileOptions = [];
+  State.expansionTile = null;
   renderAll();
+}
+
+function getExpansionCost(exp) {
+  return PATTERN_MAP[exp.pattern] ? PATTERN_MAP[exp.pattern].cost : 0;
+}
+
+function canAffordExpansion() {
+  if (State.expansionStorage.length === 0) return false;
+  var exp = State.expansionStorage[0];
+  var cost = getExpansionCost(exp);
+  if (cost <= 1) return true;
+  var needed = cost - 1;
+  var available = 0;
+  for (var i = 0; i < State.storage.length; i++) {
+    var pt = State.storage[i];
+    if (pt.isJoker) { available++; continue; }
+    if (pt.color === exp.color || pt.pattern === exp.pattern) available++;
+  }
+  return available >= needed;
+}
+
+function getExpansionPayment(exp) {
+  var cost = getExpansionCost(exp);
+  if (cost <= 1) return [];
+  var needed = cost - 1;
+  // Collect candidate payment tiles (share color or pattern with expansion, or joker)
+  var candidates = [];
+  for (var i = 0; i < State.storage.length; i++) {
+    var pt = State.storage[i];
+    if (pt.isJoker || pt.color === exp.color || pt.pattern === exp.pattern) {
+      candidates.push({ idx: i, tile: pt });
+    }
+  }
+  if (candidates.length < needed) return null;
+  // Prefer non-jokers first
+  candidates.sort(function(a, b) {
+    if (a.tile.isJoker !== b.tile.isJoker) return a.tile.isJoker ? 1 : -1;
+    return 0;
+  });
+  return candidates.slice(0, needed).map(function(c) { return c.idx; });
 }
 
 function confirmExpansionPlacement(q, r) {
   if (State.expansionStorage.length === 0) return false;
   var exp = State.expansionStorage[0];
+
+  // Check and pay cost
+  var cost = getExpansionCost(exp);
+  if (cost > 1) {
+    var paymentIndices = getExpansionPayment(exp);
+    if (!paymentIndices) {
+      addLog('Cannot afford to place this expansion! Need ' + (cost - 1) + ' payment tile(s).');
+      return false;
+    }
+    // Remove payment tiles (highest index first to preserve indices)
+    paymentIndices.sort(function(a, b) { return b - a; });
+    for (var p = 0; p < paymentIndices.length; p++) {
+      State.storage.splice(paymentIndices[p], 1);
+    }
+  }
 
   // Place the full 7-hex flower: center (pavilion) + 6 neighbors
   var cluster = [{ q: q, r: r, feature: 'pavilion' }];
@@ -1063,7 +1127,7 @@ function confirmExpansionPlacement(q, r) {
     cluster.push({ q: nbrs[i].q, r: nbrs[i].r, feature: null });
   }
 
-  // Add all 7 hexes to the garden
+  // Add all 7 hexes to the garden (no tile yet — player picks outer hex next)
   for (var j = 0; j < cluster.length; j++) {
     var h = cluster[j];
     State.garden.set(hexKey(h.q, h.r), {
@@ -1071,10 +1135,44 @@ function confirmExpansionPlacement(q, r) {
     });
   }
 
+  // Create the expansion's tile
+  var expTile = {
+    id: 2000 + exp.id,
+    color: exp.color,
+    colorName: exp.colorName,
+    colorHex: exp.colorHex,
+    pattern: exp.pattern,
+    patternName: exp.patternName,
+    patternIcon: exp.patternIcon,
+    cost: cost,
+    isJoker: false
+  };
+
+  // Enter tile placement sub-mode: player chooses which outer hex gets the tile
+  State.expansionTilePlacing = true;
+  State.expansionTileOptions = nbrs.map(function(n) { return { q: n.q, r: n.r }; });
+  State.expansionTile = expTile;
+
+  var payMsg = cost > 1 ? ' (paid ' + (cost - 1) + ' tile(s))' : '';
   State.expansionStorage.splice(0, 1);
   State.placingExpansion = false;
   State.expansionCandidates = [];
-  addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + ' (+7 hexes)');
+  addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + payMsg + ' — now click an outer hex to place the tile.');
+  renderAll();
+  return false; // Don't end turn yet — need tile placement
+}
+
+function confirmExpansionTilePlacement(q, r) {
+  var cell = State.garden.get(hexKey(q, r));
+  if (!cell) return false;
+
+  cell.tile = State.expansionTile;
+  State.expansionTilePlacing = false;
+  State.expansionTileOptions = [];
+  State.expansionTile = null;
+
+  addLog('Expansion tile ' + cell.tile.patternIcon + ' ' + cell.tile.colorName + ' ' + cell.tile.patternName + ' placed at (' + q + ',' + r + ')');
+  checkFeatureSurrounded(q, r);
   renderAll();
   return true;
 }
@@ -1083,6 +1181,17 @@ function confirmExpansionPlacement(q, r) {
 function placeExpansion(expIndex) {
   if (expIndex >= State.expansionStorage.length) return false;
   var exp = State.expansionStorage[expIndex];
+
+  // Check cost
+  var cost = getExpansionCost(exp);
+  if (cost > 1) {
+    var paymentIndices = getExpansionPayment(exp);
+    if (!paymentIndices) return false; // Can't afford
+    paymentIndices.sort(function(a, b) { return b - a; });
+    for (var p = 0; p < paymentIndices.length; p++) {
+      State.storage.splice(paymentIndices[p], 1);
+    }
+  }
 
   var centers = findValidExpansionCenters(State.garden);
   if (centers.length === 0) return false;
@@ -1121,8 +1230,20 @@ function placeExpansion(expIndex) {
     });
   }
 
+  // Place expansion tile on a random outer hex
+  var expTile = {
+    id: 2000 + exp.id,
+    color: exp.color, colorName: exp.colorName, colorHex: exp.colorHex,
+    pattern: exp.pattern, patternName: exp.patternName, patternIcon: exp.patternIcon,
+    cost: cost, isJoker: false
+  };
+  var outerIdx = Math.floor(Math.random() * nbrs.length);
+  var outerKey = hexKey(nbrs[outerIdx].q, nbrs[outerIdx].r);
+  State.garden.get(outerKey).tile = expTile;
+
   State.expansionStorage.splice(expIndex, 1);
-  addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + ' (+7 hexes)');
+  var payMsg = cost > 1 ? ' (paid ' + (cost - 1) + ' tile(s))' : '';
+  addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + ' (+7 hexes, tile placed)' + payMsg);
   renderAll();
   return true;
 }
@@ -1537,6 +1658,10 @@ function renderGarden() {
     maxY = Math.max(maxY, p.y + HEX_SIZE);
   });
   // Include expansion candidates in bounds
+  if (State.expansionTilePlacing) {
+    bar.textContent = 'Click a highlighted outer hex to place the expansion tile (' + State.expansionTile.patternIcon + ' ' + State.expansionTile.colorName + ' ' + State.expansionTile.patternName + ').';
+    return;
+  }
   if (State.placingExpansion) {
     for (var bc = 0; bc < State.expansionCandidates.length; bc++) {
       var bp = hexToPixel(State.expansionCandidates[bc].q, State.expansionCandidates[bc].r, HEX_SIZE);
@@ -1588,7 +1713,18 @@ var SVG_PATTERNS = {
       poly.classList.add('fountain');
     }
 
-    if (State.placingExpansion) {
+    if (State.expansionTilePlacing) {
+      // Highlight outer hexes where the expansion tile can be placed
+      for (var et = 0; et < State.expansionTileOptions.length; et++) {
+        if (State.expansionTileOptions[et].q === cell.q && State.expansionTileOptions[et].r === cell.r) {
+          poly.classList.add('valid-target');
+          poly.style.fill = '#e8f5e9';
+          poly.style.stroke = 'var(--accent)';
+          poly.style.strokeWidth = '2';
+          break;
+        }
+      }
+    } else if (State.placingExpansion) {
       // Highlight expansion placement candidates
       for (var ec = 0; ec < State.expansionCandidates.length; ec++) {
         if (State.expansionCandidates[ec].q === cell.q && State.expansionCandidates[ec].r === cell.r) {
@@ -1849,12 +1985,14 @@ function updateInfoBar() {
 
 function updateButtons() {
   var isHumanTurn = State.currentPlayer === 0 && !State.roundPassed[0];
-  var canPlace = State.selectedStorageTile !== null && isHumanTurn && canAffordPlacement(State.selectedStorageTile);
+  var inExpTileMode = State.expansionTilePlacing;
+  var canPlace = State.selectedStorageTile !== null && isHumanTurn && !inExpTileMode && canAffordPlacement(State.selectedStorageTile);
   document.getElementById('btnPlace').disabled = !canPlace;
   var expBtn = document.getElementById('btnPlaceExp');
-  expBtn.disabled = !isHumanTurn || (State.expansionStorage.length === 0 && !State.placingExpansion);
+  var canExp = isHumanTurn && !inExpTileMode && (State.expansionStorage.length > 0 || State.placingExpansion) && (State.placingExpansion || canAffordExpansion());
+  expBtn.disabled = !canExp;
   expBtn.textContent = State.placingExpansion ? 'Cancel Expansion' : 'Place Expansion';
-  document.getElementById('btnPass').disabled = !isHumanTurn;
+  document.getElementById('btnPass').disabled = !isHumanTurn || inExpTileMode;
 }
 
 // === CLICK-FIRST ACQUIRE ===
@@ -2043,6 +2181,23 @@ function handleStorageClick(index) {
 function handleHexClick(q, r) {
   if (State.currentPlayer !== 0) return;
 
+  // Expansion tile placement sub-mode: choose which outer hex gets the tile
+  if (State.expansionTilePlacing) {
+    var isOption = false;
+    for (var t = 0; t < State.expansionTileOptions.length; t++) {
+      if (State.expansionTileOptions[t].q === q && State.expansionTileOptions[t].r === r) {
+        isOption = true;
+        break;
+      }
+    }
+    if (isOption) {
+      if (confirmExpansionTilePlacement(q, r)) {
+        endTurn();
+      }
+    }
+    return;
+  }
+
   // Expansion placement mode
   if (State.placingExpansion) {
     var isCandidate = false;
@@ -2096,6 +2251,9 @@ function endTurn() {
   State.selectedStorageTile = null;
   State.placingExpansion = false;
   State.expansionCandidates = [];
+  State.expansionTilePlacing = false;
+  State.expansionTileOptions = [];
+  State.expansionTile = null;
   renderAll();
 
   // AI turn
@@ -2207,7 +2365,7 @@ function aiTurn() {
   } else if (action.type === 'placeExp') {
     // AI places an expansion
     var aiExp = aiExpStorage.splice(0, 1)[0];
-    expandAiGarden(p, aiGarden);
+    expandAiGarden(p, aiGarden, aiExp, aiStorage);
     addLog(pName + ' places expansion: ' + aiExp.colorName + ' ' + aiExp.patternName);
 
   } else {
@@ -2237,7 +2395,48 @@ function initAiGarden(playerIdx) {
   State.players[playerIdx].aiExpStorage = [];
 }
 
-function expandAiGarden(playerIdx, garden) {
+function canAiAffordExpansion(exp, storage) {
+  var cost = getExpansionCost(exp);
+  if (cost <= 1) return true;
+  var needed = cost - 1;
+  var available = 0;
+  for (var i = 0; i < storage.length; i++) {
+    var pt = storage[i];
+    if (pt.isJoker) { available++; continue; }
+    if (pt.color === exp.color || pt.pattern === exp.pattern) available++;
+  }
+  return available >= needed;
+}
+
+function payAiExpansionCost(exp, storage) {
+  var cost = getExpansionCost(exp);
+  if (cost <= 1) return;
+  var needed = cost - 1;
+  var candidates = [];
+  for (var i = 0; i < storage.length; i++) {
+    var pt = storage[i];
+    if (pt.isJoker || pt.color === exp.color || pt.pattern === exp.pattern) {
+      candidates.push(i);
+    }
+  }
+  // Prefer non-jokers first
+  candidates.sort(function(a, b) {
+    if (storage[a].isJoker !== storage[b].isJoker) return storage[a].isJoker ? 1 : -1;
+    return 0;
+  });
+  var toRemove = candidates.slice(0, needed);
+  toRemove.sort(function(a, b) { return b - a; }); // remove from end first
+  for (var r = 0; r < toRemove.length; r++) {
+    storage.splice(toRemove[r], 1);
+  }
+}
+
+function expandAiGarden(playerIdx, garden, aiExp, aiStorage) {
+  // Pay expansion cost
+  if (aiExp && aiStorage) {
+    payAiExpansionCost(aiExp, aiStorage);
+  }
+
   // Use the same valid center logic as the player
   var centers = findValidExpansionCenters(garden);
   if (centers.length === 0) return;
@@ -2273,6 +2472,19 @@ function expandAiGarden(playerIdx, garden) {
       q: nbrs[n].q, r: nbrs[n].r, tile: null, feature: null
     });
   }
+
+  // Place the expansion's tile on a random outer hex
+  if (aiExp) {
+    var expTile = {
+      id: 2000 + aiExp.id,
+      color: aiExp.color, colorName: aiExp.colorName, colorHex: aiExp.colorHex,
+      pattern: aiExp.pattern, patternName: aiExp.patternName, patternIcon: aiExp.patternIcon,
+      cost: getExpansionCost(aiExp), isJoker: false
+    };
+    var outerIdx = Math.floor(Math.random() * nbrs.length);
+    var outerKey = hexKey(nbrs[outerIdx].q, nbrs[outerIdx].r);
+    garden.get(outerKey).tile = expTile;
+  }
 }
 
 function decideAiAction(playerIdx, storage, expStorage, garden) {
@@ -2299,8 +2511,8 @@ function decideAiAction(playerIdx, storage, expStorage, garden) {
     if (placeAction) return placeAction;
   }
 
-  // If has expansion and garden is small, place expansion
-  if (expStorage.length > 0 && countGardenSize(garden) < 25) {
+  // If has expansion and garden is small, place expansion (if affordable)
+  if (expStorage.length > 0 && countGardenSize(garden) < 25 && canAiAffordExpansion(expStorage[0], storage)) {
     return { type: 'placeExp' };
   }
 
@@ -2325,8 +2537,8 @@ function decideAiAction(playerIdx, storage, expStorage, garden) {
     if (fallbackPlace) return fallbackPlace;
   }
 
-  // Place expansion if available
-  if (expStorage.length > 0) {
+  // Place expansion if available and affordable
+  if (expStorage.length > 0 && canAiAffordExpansion(expStorage[0], storage)) {
     return { type: 'placeExp' };
   }
 
@@ -2521,6 +2733,11 @@ function endRound() {
   State.currentPlayer = 0;
   State.expansionStack = [];
   State.displayExpansions = [];
+  State.placingExpansion = false;
+  State.expansionCandidates = [];
+  State.expansionTilePlacing = false;
+  State.expansionTileOptions = [];
+  State.expansionTile = null;
   setupRoundDisplay();
   addLog('Round ' + State.round + ' begins!');
   renderAll();
@@ -2540,12 +2757,15 @@ document.getElementById('btnPass').addEventListener('click', function() {
 
 document.getElementById('btnPlaceExp').addEventListener('click', function() {
   if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
+  if (State.expansionTilePlacing) return; // Don't cancel during tile placement sub-step
   if (State.placingExpansion) {
     cancelExpansionPlacement();
     return;
   }
-  if (State.expansionStorage.length > 0) {
+  if (State.expansionStorage.length > 0 && canAffordExpansion()) {
     enterExpansionPlacementMode();
+  } else if (State.expansionStorage.length > 0) {
+    addLog('Cannot afford to place this expansion!');
   }
 });
 

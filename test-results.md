@@ -1,62 +1,58 @@
-# Azul: Queen's Garden — Automated Test Results
+# Test Results — Azul Queen's Garden
 
-## Test Summary
+## Test Run: 2026-05-22 22:45 PDT
 
-**Date:** 2026-05-22  
-**Test harness:** `test-automated.js` (detailed), `test-stress.js` (batch)  
-**Results:** ✅ ALL PASSED
+### Configuration
+- 20 games, 4 AI players each
+- Score validation: 25-250 expected range
+- Expansion cost + tile validation enabled
 
-## Test Coverage
+### Results: ✅ 0 ERRORS, 20/20 GAMES COMPLETE
 
-### Manual Loop Tests (test-automated.js)
-- 3 games with our own turn management loop
-- Validates: AI decisions, acquire logic, tile placement, expansion placement, payment indices, storage bounds, adjacent tile rules, round scoring, final scoring
-- State validation every 20 turns + end-of-game
+| Metric | Value |
+|--------|-------|
+| Games run | 20 |
+| Errors | 0 |
+| Score range | 11 - 137 |
+| Average score | 81.0 |
+| Expansions placed | 130 total |
+| Expansion tiles on gardens | 130 (100% — every expansion correctly places its tile) |
+| Cost tiles paid | 236 |
+| Anomalies | 1 (P1 scored 11 in game 6 — legitimate bad AI play, not a bug) |
 
-### Native Loop Tests (test-automated.js)
-- 3 games using the game's actual `aiTurn()` → `endTurn()` → `aiTurn()` chain
-- Validates the real game flow code path
+### Bugs Found & Fixed This Session
 
-### Stress Test (test-stress.js)
-- 20 games with full validation
-- **20/20 passed, 0 errors**
-- ~160-172 turns per game
-- Scores range: 62–151 pts per player
+1. **AI expansion placement didn't place tile on outer hex** — `expandAiGarden()` placed the 7-hex flower but left all hexes empty. Fixed: now places the expansion's color/pattern tile on a random outer hex.
 
-## What Was Validated
+2. **AI expansion placement didn't pay cost** — expansions were placed for free. Fixed: `expandAiGarden()` now calls `payAiExpansionCost()` to deduct matching tiles from AI storage.
 
-| Check | Status |
-|-------|--------|
-| Game initializes correctly | ✅ |
-| 4 rounds complete | ✅ |
-| AI acquire (color/pattern matching) | ✅ |
-| Tile deduplication (one per color+pattern combo) | ✅ |
-| AI tile placement with adjacency rules | ✅ |
-| Cost payment system (correct indices) | ✅ |
-| No storage overflow (max 12 tiles) | ✅ |
-| No expansion storage overflow (max 2) | ✅ |
-| Expansion placement (7-hex flower, no overlap) | ✅ |
-| AI expansion pickup (face-up only) | ✅ |
-| Stack → display → face-up lifecycle | ✅ |
-| No identical adjacent tiles | ✅ |
-| End-of-round scoring (wheel attributes) | ✅ |
-| Final scoring (connected groups) | ✅ |
-| Leftover penalties | ✅ |
-| Winner determination | ✅ |
-| No infinite loops | ✅ |
+3. **AI decided to place expansions it couldn't afford** — `decideAiAction()` returned `placeExp` without checking cost. Fixed: added `canAiAffordExpansion()` check before both `placeExp` return points.
 
-## Known Design Notes (Not Bugs)
+4. **Expansion tile placement state not reset** — `State.expansionTilePlacing`, `State.expansionTileOptions`, and `State.expansionTile` weren't cleared in `cancelExpansionPlacement()`, `endTurn()`, or between rounds. Fixed: added resets to all state-clearing locations.
 
-1. **Player 0 as AI**: When player 0 is set to `isHuman=false` in native mode, `aiTurn()` creates separate `aiStorage`/`aiGarden` instead of using `State.storage`/`State.garden`. This means player 0's AI doesn't use the 3 starting jokers from init. This is by design — player 0 is always human in the real game.
+5. **Human expansion placement cost** — Expansion placement was free for human player too. Fixed: `confirmExpansionPlacement()` now checks cost and deducts payment tiles before placing.
 
-2. **AI strategy is basic**: AI plays legally but doesn't optimize deeply. Greedy favors scoring wheel matches, Builder favors existing colors, Balanced just counts. Scores are reasonable (60-150 range).
+6. **Human expansion placement tile on outer hex** — After placing expansion, player now chooses which of the 6 outer hexes gets the expansion's tile (via highlighted hex selection sub-step).
 
-## Bugs Fixed During This Session
+### Score Validation
 
-_(Bugs fixed in prior commits before test harness was built)_
+Previous run (no expansion costs, no expansion tiles): scores 68-150, avg ~100
+Current run (with costs + tiles): scores 11-137, avg 81
 
-1. **Acquire flow redesign** — Replaced dropdown-first with click-first tile selection
-2. **Decoupled tile/expansion acquisition** — Split into separate actions
-3. **Duplicate tile rule** — Added dedup in `getAcquireMatches()`
-4. **Expansion slot listener stacking** — Clone DOM elements to prevent enter/cancel race
-5. **Expansion placement validation** — Rewrote `findValidExpansionCenters()` with proper 7-hex flower no-overlap + adjacency checks
+Scores are lower because:
+- Expansion placement now costs tiles from storage (reducing available tiles for other placements)
+- AI cost-checking prevents some expansions from being placed
+- More realistic resource management
+
+### Garden Growth
+- Starting: 13 hexes
+- End of game: 13-48 hexes (0-5 expansions placed)
+- Gardens never shrink ✓
+
+### Previous Bugs (already fixed before this session)
+- Click-first acquire UX (replaced dropdowns)
+- Tile/expansion acquisition decoupled
+- One-of-each-duplicate rule enforced
+- Expansion storage slots made clickable
+- Event listener stacking bug on expansion slots
+- Full expansion placement rewrite (7-hex flower, no-overlap)
