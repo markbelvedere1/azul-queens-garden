@@ -662,7 +662,19 @@ function getAcquireMatches(type, value) {
     }
   }
 
-  return { tiles: matchedTiles, expansions: [] };
+  // Deduplicate: only one tile per unique color+pattern combo
+  var seen = {};
+  var dedupedTiles = [];
+  for (var u = 0; u < matchedTiles.length; u++) {
+    var mt = matchedTiles[u];
+    var comboKey = mt.tile.color + '|' + mt.tile.pattern;
+    if (!seen[comboKey]) {
+      seen[comboKey] = true;
+      dedupedTiles.push(mt);
+    }
+  }
+
+  return { tiles: dedupedTiles, expansions: [] };
 }
 
 function executeAcquire(type, value) {
