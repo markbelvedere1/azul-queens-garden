@@ -316,6 +316,23 @@ main {
 </style>
 </head>
 <body>
+<!-- Error Overlay -->
+<div id="errorOverlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:99999; overflow-y:auto; padding:16px; font-family:monospace; color:#f8f8f8;">
+  <div style="max-width:600px; margin:0 auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h2 style="color:#ff6b6b; margin:0;">🐛 Error Caught</h2>
+      <button onclick="document.getElementById('errorOverlay').style.display='none'" style="background:#444; color:#fff; border:none; padding:6px 14px; border-radius:4px; font-size:14px; cursor:pointer;">Dismiss</button>
+    </div>
+    <div id="errorMessage" style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:10px; white-space:pre-wrap; word-break:break-word; font-size:13px; line-height:1.5; border-left:3px solid #ff6b6b;"></div>
+    <div id="errorStack" style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:10px; white-space:pre-wrap; word-break:break-word; font-size:11px; line-height:1.4; color:#aaa; max-height:300px; overflow-y:auto;"></div>
+    <div id="errorState" style="background:#1a1a2e; padding:12px; border-radius:6px; white-space:pre-wrap; word-break:break-word; font-size:11px; line-height:1.4; color:#88a8d8; max-height:300px; overflow-y:auto;"></div>
+    <div style="margin-top:10px; display:flex; gap:8px;">
+      <button onclick="try{renderAll()}catch(e){}" style="background:#2d6a4f; color:#fff; border:none; padding:8px 16px; border-radius:4px; font-size:13px; cursor:pointer;">Try Re-render</button>
+      <button onclick="copyErrorLog()" style="background:#4a6fa5; color:#fff; border:none; padding:8px 16px; border-radius:4px; font-size:13px; cursor:pointer;">Copy Error Log</button>
+    </div>
+    <div id="errorHistory" style="margin-top:16px;"></div>
+  </div>
+</div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
   <span class="phase-tag">v1.2 — Click-first acquire</span>
@@ -379,6 +396,78 @@ main {
   </div>
 </main>
 <script>
+/* ============================================================
+   ERROR CATCHING SERVICE
+   ============================================================ */
+var _errorLog = [];
+
+function getStateSnapshot() {
+  try {
+    return JSON.stringify({
+      currentPlayer: State.currentPlayer,
+      round: State.round,
+      phase: State.phase,
+      selectedStorageTile: State.selectedStorageTile,
+      placingExpansion: State.placingExpansion,
+      expansionTilePlacing: State.expansionTilePlacing,
+      storageCount: State.storage ? State.storage.length : '?',
+      expansionStorageCount: State.expansionStorage ? State.expansionStorage.length : '?',
+      gardenSize: State.garden ? State.garden.size : '?',
+      expansionCandidates: State.expansionCandidates ? State.expansionCandidates.length : 0,
+      roundPassed: State.roundPassed,
+      scores: State.scores
+    }, null, 2);
+  } catch (e) { return '(could not snapshot state: ' + e.message + ')'; }
+}
+
+function showError(msg, stack, context) {
+  var entry = {
+    time: new Date().toISOString(),
+    message: msg,
+    stack: stack || '',
+    context: context || '',
+    state: getStateSnapshot()
+  };
+  _errorLog.push(entry);
+
+  var overlay = document.getElementById('errorOverlay');
+  document.getElementById('errorMessage').textContent = (context ? '[' + context + '] ' : '') + msg;
+  document.getElementById('errorStack').textContent = stack || '(no stack trace)';
+  document.getElementById('errorState').textContent = 'Game State:\n' + entry.state;
+  overlay.style.display = 'block';
+
+  // Update history
+  var hist = document.getElementById('errorHistory');
+  if (_errorLog.length > 1) {
+    hist.innerHTML = '<h3 style="color:#888;margin-bottom:6px;">Previous errors (' + (_errorLog.length - 1) + ')</h3>';
+    for (var i = _errorLog.length - 2; i >= 0; i--) {
+      hist.innerHTML += '<div style="background:#1a1a2e;padding:8px;border-radius:4px;margin-bottom:4px;font-size:11px;color:#888;">' +
+        _errorLog[i].time + ' — ' + _errorLog[i].message + '</div>';
+    }
+  }
+}
+
+function copyErrorLog() {
+  var text = _errorLog.map(function(e) {
+    return '--- ' + e.time + ' ---\n' + e.context + ': ' + e.message + '\n' + e.stack + '\nState: ' + e.state;
+  }).join('\n\n');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function() { alert('Error log copied!'); });
+  } else {
+    prompt('Copy this error log:', text);
+  }
+}
+
+// Global error handler
+window.onerror = function(msg, source, lineno, colno, error) {
+  showError(msg, error ? error.stack : (source + ':' + lineno + ':' + colno), 'uncaught');
+  return true; // prevent default console error
+};
+
+window.addEventListener('unhandledrejection', function(event) {
+  showError(String(event.reason), event.reason && event.reason.stack ? event.reason.stack : '', 'unhandled-promise');
+});
+
 /* ============================================================
    AZUL: QUEEN'S GARDEN — Phase 1+2: Hex grid, data model,
    adjacency, drafting system
@@ -923,6 +1012,7 @@ function tryMixedPayment(candidates, needed) {
 
 // === PLACE TILE ===
 function placeTile(q, r, tileIndex) {
+  try {
   var tile = State.storage[tileIndex];
   if (!tile) return false;
   if (!canPlaceTile(q, r, tile)) return false;
@@ -958,6 +1048,7 @@ function placeTile(q, r, tileIndex) {
   State.selectedHex = null;
   renderAll();
   return true;
+  } catch (e) { showError(e.message, e.stack, 'placeTile(q=' + q + ',r=' + r + ')'); return false; }
 }
 
 // === EXPANSION PLACEMENT (Phase 3) ===
@@ -1108,6 +1199,7 @@ function getExpansionPayment(exp) {
 }
 
 function confirmExpansionPlacement(q, r) {
+  try {
   if (State.expansionStorage.length === 0) return false;
   var exp = State.expansionStorage[0];
 
@@ -1167,9 +1259,11 @@ function confirmExpansionPlacement(q, r) {
   addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + payMsg + ' — now click an outer hex to place the tile.');
   renderAll();
   return false; // Don't end turn yet — need tile placement
+  } catch (e) { showError(e.message, e.stack, 'confirmExpansionPlacement(q=' + q + ',r=' + r + ')'); return false; }
 }
 
 function confirmExpansionTilePlacement(q, r) {
+  try {
   var cell = State.garden.get(hexKey(q, r));
   if (!cell) return false;
 
@@ -1182,6 +1276,7 @@ function confirmExpansionTilePlacement(q, r) {
   checkFeatureSurrounded(q, r);
   renderAll();
   return true;
+  } catch (e) { showError(e.message, e.stack, 'confirmExpansionTilePlacement(q=' + q + ',r=' + r + ')'); return false; }
 }
 
 // AI expansion placement: find best valid center and place full 7-hex flower
@@ -1458,6 +1553,7 @@ function addLog(msg) {
 
 // === RENDERING ===
 function renderAll() {
+  try {
   renderDisplay();
   renderGarden();
   renderStorage();
@@ -1468,6 +1564,7 @@ function renderAll() {
   updateInfoBar();
   updateButtons();
   updateBagCounter();
+  } catch (e) { showError(e.message, e.stack, 'renderAll'); }
 }
 
 function renderScoringWheel() {
@@ -2186,6 +2283,7 @@ function handleStorageClick(index) {
 }
 
 function handleHexClick(q, r) {
+  try {
   if (State.currentPlayer !== 0) return;
 
   // Expansion tile placement sub-mode: choose which outer hex gets the tile
@@ -2236,10 +2334,12 @@ function handleHexClick(q, r) {
     placeTile(q, r, State.selectedStorageTile);
     endTurn();
   }
+  } catch (e) { showError(e.message, e.stack, 'handleHexClick(q=' + q + ',r=' + r + ')'); }
 }
 
 // === TURN MANAGEMENT ===
 function endTurn() {
+  try {
   // Move to next non-passed player
   var next = (State.currentPlayer + 1) % 4;
   var loopGuard = 0;
@@ -2267,9 +2367,11 @@ function endTurn() {
   if (!State.players[State.currentPlayer].isHuman) {
     setTimeout(function() { aiTurn(); }, 300);
   }
+  } catch (e) { showError(e.message, e.stack, 'endTurn'); }
 }
 
 function aiTurn() {
+  try {
   var p = State.currentPlayer;
   var pName = State.players[p].name;
 
@@ -2381,6 +2483,7 @@ function aiTurn() {
   }
 
   endTurn();
+  } catch (e) { showError(e.message, e.stack, 'aiTurn(player=' + State.currentPlayer + ')'); }
 }
 
 function initAiGarden(playerIdx) {

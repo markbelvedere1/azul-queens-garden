@@ -5,6 +5,12 @@ const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
 let jsCode = scriptMatch[1];
 
+// Stub window/navigator for Node test env
+if (typeof window === 'undefined') {
+  global.window = { onerror: null, addEventListener: function() {} };
+  global.navigator = { clipboard: null };
+}
+
 function createDomStubs() {
   const els = {};
   function s(id) {
@@ -51,9 +57,9 @@ function createGame() {
     scoreLeftovers,renderAll,expandAiGarden,initAiGarden,countGardenSize,
     getExpansionCost,canAiAffordExpansion,payAiExpansionCost,PATTERNS,PATTERN_MAP,COLORS,COLOR_MAP`.replace(/\s+/g,'');
 
-  const w = `(function(document,setTimeout,clearTimeout,window){${code};return{${exports}}})`;
+  const w = `(function(document,setTimeout,clearTimeout,window,navigator){${code};return{${exports}}})`;
   const doc = createDomStubs();
-  return eval(w)(doc,(fn)=>fn(),()=>{},{innerWidth:1024,innerHeight:768});
+  return eval(w)(doc,(fn)=>fn(),()=>{},{innerWidth:1024,innerHeight:768,onerror:null,addEventListener:function(){}},{clipboard:null});
 }
 
 // ============== CONFIG ==============
