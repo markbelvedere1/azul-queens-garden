@@ -445,6 +445,17 @@ function showError(msg, stack, context) {
         _errorLog[i].time + ' — ' + _errorLog[i].message + '</div>';
     }
   }
+
+  // Report error to Space backend (fire-and-forget)
+  try {
+    var actionsUrl = './actions';
+    try { actionsUrl = window.parent.location.href.replace(/\/$/, '').replace(/#.*$/, '').replace(/\?.*$/, '') + '/actions'; } catch(e2) {}
+    fetch(actionsUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'reportError', args: {timestamp: entry.time, message: entry.message, stack: entry.stack, context: entry.context, gameState: entry.state}})
+    }).catch(function(){});
+  } catch(e) {}
 }
 
 function copyErrorLog() {
@@ -1763,8 +1774,14 @@ function renderGarden() {
   });
   // Include expansion candidates in bounds
   if (State.expansionTilePlacing) {
-    bar.textContent = 'Click a highlighted outer hex to place the expansion tile (' + State.expansionTile.patternIcon + ' ' + State.expansionTile.colorName + ' ' + State.expansionTile.patternName + ').';
-    return;
+    // Show expansion tile options — render continues below
+    for (var et = 0; et < State.expansionTileOptions.length; et++) {
+      var ep = hexToPixel(State.expansionTileOptions[et].q, State.expansionTileOptions[et].r, HEX_SIZE);
+      minX = Math.min(minX, ep.x - HEX_SIZE);
+      maxX = Math.max(maxX, ep.x + HEX_SIZE);
+      minY = Math.min(minY, ep.y - HEX_SIZE);
+      maxY = Math.max(maxY, ep.y + HEX_SIZE);
+    }
   }
   if (State.placingExpansion) {
     for (var bc = 0; bc < State.expansionCandidates.length; bc++) {
@@ -2072,6 +2089,10 @@ function updateInfoBar() {
   }
   if (State.placingExpansion) {
     bar.textContent = 'EXPANSION MODE: Click a highlighted hex to place pavilion center. Click "Place Expansion" again to cancel.';
+    return;
+  }
+  if (State.expansionTilePlacing) {
+    bar.textContent = 'Click a highlighted outer hex to place the expansion tile (' + State.expansionTile.patternIcon + ' ' + State.expansionTile.colorName + ' ' + State.expansionTile.patternName + ').';
     return;
   }
   if (State.selectedStorageTile !== null) {
