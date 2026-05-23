@@ -225,7 +225,7 @@ main {
 <body>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">Phase 2 — Drafting System</span>
+  <span class="phase-tag">Phase 4 — Scoring + Rounds</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -250,6 +250,10 @@ main {
   </div>
   <!-- Sidebar -->
   <div class="sidebar">
+    <div class="panel">
+      <h3>Scoring Wheel — Round <span id="wheelRound">1</span></h3>
+      <div id="wheelDisplay" style="font-size:0.75rem"></div>
+    </div>
     <div class="panel">
       <div class="turn-indicator" id="turnIndicator">Your Turn</div>
       <h3>Scores — Round <span id="roundNum">1</span>/4</h3>
@@ -457,7 +461,11 @@ var State = {
   expansionStorage: [],  // max 2 expansions
   log: [],
   phase: 'acquire', // acquire | place | pass | roundEnd
-  roundPassed: []  // players who have passed this round
+  roundPassed: [],  // players who have passed this round
+  // Scoring wheel (Phase 4)
+  scoringWheel: [],     // 12 attributes (6 colors + 6 patterns), shuffled
+  wheelPosition: 0,     // current position in the wheel
+  roundScoreHistory: []  // track what scored each round
 };
 
 function initGame() {
@@ -498,6 +506,9 @@ function initGame() {
 
   // Set up display for round 1
   setupRoundDisplay();
+
+  // Initialize scoring wheel (Phase 4)
+  initScoringWheel();
 
   addLog('Game started! Round 1 of 4.');
   addLog('Use Acquire to take tiles from the display.');
@@ -948,6 +959,178 @@ function checkFeatureSurrounded(pq, pr) {
   }
 }
 
+// === SCORING SYSTEM (Phase 4) ===
+
+// The rotary wheel has 12 slots: 6 colors + 6 patterns, shuffled.
+// Each round shows 3 adjacent slots. Wheel advances 3 each round.
+// Point values increase: round 1 = [1,2,3], round 2 = [2,3,4], round 3 = [3,4,5], round 4 = [4,5,6]
+var ROUND_POINTS = [[1,2,3],[2,3,4],[3,4,5],[4,5,6]];
+
+function initScoringWheel() {
+  // Create 12 attributes (6 colors + 6 patterns)
+  var attrs = [];
+  for (var i = 0; i < COLORS.length; i++) {
+    attrs.push({ type: 'color', id: COLORS[i].id, name: COLORS[i].name, hex: COLORS[i].hex, icon: '' });
+  }
+  for (var j = 0; j < PATTERNS.length; j++) {
+    attrs.push({ type: 'pattern', id: PATTERNS[j].id, name: PATTERNS[j].name, hex: '#8D6E63', icon: PATTERNS[j].icon });
+  }
+  State.scoringWheel = shuffle(attrs);
+  State.wheelPosition = 0;
+  State.roundScoreHistory = [];
+}
+
+function getCurrentWheelAttributes() {
+  var pos = State.wheelPosition;
+  var len = State.scoringWheel.length;
+  return [
+    State.scoringWheel[pos % len],
+    State.scoringWheel[(pos + 1) % len],
+    State.scoringWheel[(pos + 2) % len]
+  ];
+}
+
+function getCurrentRoundPoints() {
+  return ROUND_POINTS[Math.min(State.round - 1, 3)];
+}
+
+// Count visible hexes matching an attribute in a garden
+function countMatchingHexes(garden, attr) {
+  var count = 0;
+  garden.forEach(function(cell) {
+    if (!cell.tile) return;
+    if (attr.type === 'color' && cell.tile.color === attr.id) count++;
+    if (attr.type === 'pattern' && cell.tile.pattern === attr.id) count++;
+    // Joker tiles don't count for specific colors/patterns
+  });
+  return count;
+}
+
+function countVisiblePavilions(garden) {
+  var count = 0;
+  garden.forEach(function(cell) {
+    if (cell.feature === 'pavilion' || cell.feature === 'fountain') {
+      // Visible = not covered by a tile? Actually in the game, pavilions are always visible
+      // They're the center of expansions and always count
+      count++;
+    }
+  });
+  return count;
+}
+
+function scoreEndOfRound(garden) {
+  var attrs = getCurrentWheelAttributes();
+  var points = getCurrentRoundPoints();
+  var totalScore = 0;
+  var details = [];
+
+  // Score each attribute × its point value
+  for (var i = 0; i < 3; i++) {
+    var matchCount = countMatchingHexes(garden, attrs[i]);
+    var earned = matchCount * points[i];
+    totalScore += earned;
+    details.push(attrs[i].name + ': ' + matchCount + '×' + points[i] + '=' + earned);
+  }
+
+  // 1 pt per visible pavilion/fountain
+  var pavilions = countVisiblePavilions(garden);
+  totalScore += pavilions;
+  if (pavilions > 0) details.push('Pavilions: ' + pavilions + '×1=' + pavilions);
+
+  return { total: totalScore, details: details };
+}
+
+// Final scoring: connected groups of 3+ same color/pattern
+function scoreFinalGroups(garden) {
+  var totalScore = 0;
+  var details = [];
+
+  // Check color groups
+  var colorGroups = findConnectedGroups(garden, 'color');
+  for (var i = 0; i < colorGroups.length; i++) {
+    var g = colorGroups[i];
+    if (g.size >= 3) {
+      var pts = 3;
+      // Check if group has all 6 patterns → +6 bonus
+      if (hasAllSixOfType(g.tiles, 'pattern')) pts += 6;
+      totalScore += pts;
+      details.push('Color group (' + g.attribute + ', size ' + g.size + '): ' + pts + ' pts');
+    }
+  }
+
+  // Check pattern groups
+  var patternGroups = findConnectedGroups(garden, 'pattern');
+  for (var j = 0; j < patternGroups.length; j++) {
+    var pg = patternGroups[j];
+    if (pg.size >= 3) {
+      var pPts = 3;
+      if (hasAllSixOfType(pg.tiles, 'color')) pPts += 6;
+      totalScore += pPts;
+      details.push('Pattern group (' + pg.attribute + ', size ' + pg.size + '): ' + pPts + ' pts');
+    }
+  }
+
+  return { total: totalScore, details: details };
+}
+
+function findConnectedGroups(garden, attrType) {
+  var visited = new Set();
+  var groups = [];
+
+  garden.forEach(function(cell, key) {
+    if (!cell.tile || cell.tile.isJoker || visited.has(key)) return;
+
+    var attrValue = cell.tile[attrType];
+    // BFS to find connected group
+    var group = [];
+    var queue = [key];
+    var groupVisited = new Set([key]);
+
+    while (queue.length > 0) {
+      var current = queue.shift();
+      var parts = current.split(',');
+      var cq = parseInt(parts[0]);
+      var cr = parseInt(parts[1]);
+      var currentCell = garden.get(current);
+
+      if (currentCell && currentCell.tile && !currentCell.tile.isJoker && currentCell.tile[attrType] === attrValue) {
+        group.push(currentCell.tile);
+        visited.add(current);
+
+        var nbrs = hexNeighbors(cq, cr);
+        for (var i = 0; i < nbrs.length; i++) {
+          var nk = hexKey(nbrs[i].q, nbrs[i].r);
+          if (!groupVisited.has(nk)) {
+            groupVisited.add(nk);
+            queue.push(nk);
+          }
+        }
+      }
+    }
+
+    if (group.length > 0) {
+      groups.push({ attribute: attrValue, size: group.length, tiles: group });
+    }
+  });
+
+  return groups;
+}
+
+function hasAllSixOfType(tiles, attrType) {
+  var vals = new Set();
+  for (var i = 0; i < tiles.length; i++) {
+    if (!tiles[i].isJoker) vals.add(tiles[i][attrType]);
+  }
+  return vals.size >= 6;
+}
+
+function scoreLeftovers(storage, expansionStorage) {
+  var penalty = 0;
+  penalty -= storage.length; // -1 per tile
+  penalty -= expansionStorage.length * 3; // -3 per expansion
+  return penalty;
+}
+
 // === LOGGING ===
 function addLog(msg) {
   State.log.unshift(msg);
@@ -960,12 +1143,68 @@ function renderAll() {
   renderGarden();
   renderStorage();
   renderScoreBoard();
+  renderScoringWheel();
   renderLog();
   renderTileRef();
   updateInfoBar();
   updateButtons();
   updateAcquireOptions();
   updateBagCounter();
+}
+
+function renderScoringWheel() {
+  var el = document.getElementById('wheelDisplay');
+  while (el.firstChild) el.removeChild(el.firstChild);
+  document.getElementById('wheelRound').textContent = State.round;
+
+  if (State.round > 4) {
+    el.textContent = 'Game Over — All rounds scored.';
+    return;
+  }
+
+  var attrs = getCurrentWheelAttributes();
+  var points = getCurrentRoundPoints();
+
+  for (var i = 0; i < 3; i++) {
+    var row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '6px';
+    row.style.padding = '3px 0';
+
+    var badge = document.createElement('span');
+    badge.style.display = 'inline-block';
+    badge.style.width = '20px';
+    badge.style.height = '20px';
+    badge.style.borderRadius = '4px';
+    badge.style.background = attrs[i].type === 'color' ? attrs[i].hex : '#8D6E63';
+    badge.style.textAlign = 'center';
+    badge.style.lineHeight = '20px';
+    badge.style.fontSize = '11px';
+    badge.style.color = 'white';
+    badge.textContent = attrs[i].icon || '';
+    row.appendChild(badge);
+
+    var label = document.createElement('span');
+    label.textContent = attrs[i].name;
+    label.style.flex = '1';
+    row.appendChild(label);
+
+    var pts = document.createElement('span');
+    pts.style.fontWeight = '700';
+    pts.style.color = 'var(--accent)';
+    pts.textContent = '×' + points[i] + ' pts';
+    row.appendChild(pts);
+
+    el.appendChild(row);
+  }
+
+  // Show pavilion bonus
+  var pavRow = document.createElement('div');
+  pavRow.style.padding = '3px 0';
+  pavRow.style.color = 'var(--text-muted)';
+  pavRow.textContent = '🏛️ + 1 pt per visible pavilion/fountain';
+  el.appendChild(pavRow);
 }
 
 function renderDisplay() {
@@ -1428,24 +1667,68 @@ function aiTurn() {
 }
 
 function endRound() {
-  addLog('--- Round ' + State.round + ' ended ---');
+  addLog('--- End of Round ' + State.round + ' ---');
+
+  // Score end of round
+  var score = scoreEndOfRound(State.garden);
+  State.players[0].score += score.total;
+  addLog('Your round score: +' + score.total + ' pts (' + score.details.join(', ') + ')');
+
+  // AI scoring (simplified: random 5-15 pts each)
+  for (var i = 1; i < State.players.length; i++) {
+    var aiPts = Math.floor(Math.random() * 11) + 5;
+    State.players[i].score += aiPts;
+    addLog(State.players[i].name + ': +' + aiPts + ' pts');
+  }
+
+  // Track wheel history
+  State.roundScoreHistory.push({
+    round: State.round,
+    attrs: getCurrentWheelAttributes().map(function(a) { return a.name; }),
+    points: getCurrentRoundPoints()
+  });
+
+  // Advance wheel
+  State.wheelPosition += 3;
+
   State.round++;
 
   if (State.round > 4) {
-    addLog('🏁 GAME OVER! Final scoring coming in Phase 4.');
+    // Final scoring
+    addLog('=== GAME OVER — Final Scoring ===');
+    var final = scoreFinalGroups(State.garden);
+    State.players[0].score += final.total;
+    addLog('Group bonuses: +' + final.total + ' pts');
+    for (var j = 0; j < final.details.length; j++) {
+      addLog('  ' + final.details[j]);
+    }
+    var leftover = scoreLeftovers(State.storage, State.expansionStorage);
+    State.players[0].score += leftover;
+    if (leftover < 0) addLog('Leftover penalty: ' + leftover + ' pts');
+
+    // AI final scoring
+    for (var k = 1; k < State.players.length; k++) {
+      var aiFinal = Math.floor(Math.random() * 15) + 5;
+      State.players[k].score += aiFinal;
+      State.players[k].score -= Math.floor(Math.random() * 5);
+    }
+
+    // Determine winner
+    var winner = State.players[0];
+    for (var w = 1; w < State.players.length; w++) {
+      if (State.players[w].score > winner.score) winner = State.players[w];
+    }
+    addLog('🏆 Winner: ' + winner.name + ' with ' + winner.score + ' points!');
+
     renderAll();
     return;
   }
 
-  // Reset passes
+  // Reset for next round
   State.roundPassed = [false, false, false, false];
-  State.currentPlayer = 0; // simplified: first player always starts
-
-  // Discard remaining display items
+  State.currentPlayer = 0;
   State.expansionStack = [];
   State.displayExpansions = [];
-
-  // Setup next round
   setupRoundDisplay();
   addLog('Round ' + State.round + ' begins!');
   renderAll();
