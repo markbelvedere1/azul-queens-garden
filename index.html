@@ -414,6 +414,7 @@ function getStateSnapshot() {
       expansionStorageCount: State.expansionStorage ? State.expansionStorage.length : '?',
       gardenSize: State.garden ? State.garden.size : '?',
       expansionCandidates: State.expansionCandidates ? State.expansionCandidates.length : 0,
+      usedExpansionSlots: State.usedExpansionSlots ? State.usedExpansionSlots.slice() : [],
       paymentMode: State.paymentMode,
       paymentNeeded: State.paymentNeeded,
       paymentSelected: State.paymentSelected ? State.paymentSelected.length : 0,
@@ -620,6 +621,48 @@ function hexNeighbors(q, r) {
 
 function hexKey(q, r) { return q + ',' + r; }
 
+// === CANONICAL GARDEN GRID ===
+// The garden has exactly 6 expansion slot positions around the 13-hex fountain.
+// Each slot holds a 7-hex flower expansion. Centers are at ring-3 "straight" positions.
+var EXPANSION_SLOT_CENTERS = [
+  {q:3, r:0},    // East
+  {q:0, r:3},    // South
+  {q:-3, r:3},   // Southwest
+  {q:-3, r:0},   // West
+  {q:0, r:-3},   // North
+  {q:3, r:-3}    // Northeast
+];
+
+// Get all 7 hex positions for an expansion slot centered at (cq, cr)
+function getExpansionSlotCells(cq, cr) {
+  var cells = [{q: cq, r: cr}];
+  var nbrs = hexNeighbors(cq, cr);
+  for (var i = 0; i < nbrs.length; i++) {
+    cells.push(nbrs[i]);
+  }
+  return cells;
+}
+
+// Build the full canonical grid (fountain + all 6 expansion outlines)
+// Used for bounds calculation and rendering slot outlines
+function getCanonicalGridCells() {
+  var all = [];
+  // Fountain cells
+  var fountain = createFountainLayout();
+  for (var f = 0; f < fountain.length; f++) {
+    all.push({q: fountain[f].q, r: fountain[f].r, type: 'fountain'});
+  }
+  // All 6 expansion slot cells
+  for (var s = 0; s < EXPANSION_SLOT_CENTERS.length; s++) {
+    var center = EXPANSION_SLOT_CENTERS[s];
+    var slotCells = getExpansionSlotCells(center.q, center.r);
+    for (var c = 0; c < slotCells.length; c++) {
+      all.push({q: slotCells[c].q, r: slotCells[c].r, type: 'slot', slotIndex: s});
+    }
+  }
+  return all;
+}
+
 // === FOUNTAIN BOARD ===
 function createFountainLayout() {
   var cells = [];
@@ -652,6 +695,7 @@ var State = {
   gardenCells: [],
   storage: [],           // max 12 tiles
   expansionStorage: [],  // max 2 expansions
+  usedExpansionSlots: [], // indices into EXPANSION_SLOT_CENTERS that are already placed
   log: [],
   phase: 'acquire', // acquire | place | pass | roundEnd
   placingExpansion: false,
@@ -717,6 +761,7 @@ function initGame() {
     if (State.jokerPool.length) State.storage.push(State.jokerPool.shift());
   }
   State.expansionStorage = [];
+  State.usedExpansionSlots = [];
 
   // Set up display for round 1
   setupRoundDisplay();
@@ -1194,68 +1239,18 @@ function placeTile(q, r, tileIndex) {
 //   1. (q, r) is NOT in the garden
 //   2. ALL 6 neighbors of (q, r) are NOT in the garden (full 7-hex flower is free)
 //   3. At least one of the 7 hexes has a neighbor that IS in the garden (touches existing garden)
-function findValidExpansionCenters(garden) {
-  // Build a set of hexes that are just outside the garden border (distance 1 and 2)
-  // Valid centers are at distance 2 from the garden edge — close enough to touch but far enough
-  // that the whole flower fits. We search all hexes near the garden perimeter.
-  var candidateSet = new Set();
-  garden.forEach(function(cell) {
-    // Ring 1: direct neighbors not in garden
-    var ring1 = hexNeighbors(cell.q, cell.r);
-    for (var i = 0; i < ring1.length; i++) {
-      var r1 = ring1[i];
-      var r1Key = hexKey(r1.q, r1.r);
-      if (!garden.has(r1Key)) {
-        candidateSet.add(r1Key);
-        // Ring 2: neighbors of ring-1 hexes
-        var ring2 = hexNeighbors(r1.q, r1.r);
-        for (var j = 0; j < ring2.length; j++) {
-          var r2Key = hexKey(ring2[j].q, ring2[j].r);
-          if (!garden.has(r2Key)) {
-            candidateSet.add(r2Key);
-          }
-        }
-      }
-    }
-  });
-
+// Find available expansion slot centers (canonical positions not yet used)
+function findValidExpansionCenters() {
   var validCenters = [];
-  candidateSet.forEach(function(key) {
-    var parts = key.split(',');
-    var cq = parseInt(parts[0]);
-    var cr = parseInt(parts[1]);
-
-    // Rule 1: center not in garden (guaranteed by construction above)
-
-    // Rule 2: ALL 6 neighbors must also be outside the garden
-    var nbrs = hexNeighbors(cq, cr);
-    var allFree = true;
-    for (var n = 0; n < nbrs.length; n++) {
-      if (garden.has(hexKey(nbrs[n].q, nbrs[n].r))) {
-        allFree = false;
-        break;
-      }
+  for (var i = 0; i < EXPANSION_SLOT_CENTERS.length; i++) {
+    if (State.usedExpansionSlots.indexOf(i) === -1) {
+      validCenters.push({
+        q: EXPANSION_SLOT_CENTERS[i].q,
+        r: EXPANSION_SLOT_CENTERS[i].r,
+        slotIndex: i
+      });
     }
-    if (!allFree) return;
-
-    // Rule 3: at least one of the 7 hexes must be adjacent to an existing garden hex
-    var touchesGarden = false;
-    // Check center's neighbors (some might be in garden — wait, we just checked they're not)
-    // So check the OUTER neighbors of the ring hexes
-    for (var m = 0; m < nbrs.length && !touchesGarden; m++) {
-      var outerNbrs = hexNeighbors(nbrs[m].q, nbrs[m].r);
-      for (var o = 0; o < outerNbrs.length; o++) {
-        if (garden.has(hexKey(outerNbrs[o].q, outerNbrs[o].r))) {
-          touchesGarden = true;
-          break;
-        }
-      }
-    }
-    if (!touchesGarden) return;
-
-    validCenters.push({ q: cq, r: cr });
-  });
-
+  }
   return validCenters;
 }
 
@@ -1271,7 +1266,7 @@ function enterExpansionPlacementMode() {
     return;
   }
 
-  var candidates = findValidExpansionCenters(State.garden);
+  var candidates = findValidExpansionCenters();
 
   if (candidates.length === 0) {
     addLog('No valid spots to place an expansion!');
@@ -1371,6 +1366,16 @@ function confirmExpansionPlacement(q, r) {
       });
     }
 
+    // Mark the canonical slot as used
+    for (var si2 = 0; si2 < EXPANSION_SLOT_CENTERS.length; si2++) {
+      if (EXPANSION_SLOT_CENTERS[si2].q === q && EXPANSION_SLOT_CENTERS[si2].r === r) {
+        if (State.usedExpansionSlots.indexOf(si2) === -1) {
+          State.usedExpansionSlots.push(si2);
+        }
+        break;
+      }
+    }
+
     var expTile = {
       id: 2000 + exp.id,
       color: exp.color,
@@ -1463,7 +1468,7 @@ function placeExpansion(expIndex) {
     }
   }
 
-  var centers = findValidExpansionCenters(State.garden);
+  var centers = findValidExpansionCenters();
   if (centers.length === 0) return false;
 
   // Pick center that maximizes adjacency with existing garden (most shared edges = best for scoring)
@@ -1498,6 +1503,13 @@ function placeExpansion(expIndex) {
     State.garden.set(hexKey(h.q, h.r), {
       q: h.q, r: h.r, tile: null, feature: h.feature
     });
+  }
+
+  // Mark the canonical slot as used
+  if (bestCenter.slotIndex !== undefined) {
+    if (State.usedExpansionSlots.indexOf(bestCenter.slotIndex) === -1) {
+      State.usedExpansionSlots.push(bestCenter.slotIndex);
+    }
   }
 
   // Place expansion tile on a random outer hex
@@ -1922,31 +1934,25 @@ function renderGarden() {
   }
 
   var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  garden.forEach(function(cell) {
-    var p = hexToPixel(cell.q, cell.r, HEX_SIZE);
-    minX = Math.min(minX, p.x - HEX_SIZE);
-    maxX = Math.max(maxX, p.x + HEX_SIZE);
-    minY = Math.min(minY, p.y - HEX_SIZE);
-    maxY = Math.max(maxY, p.y + HEX_SIZE);
-  });
-  // Include expansion candidates in bounds
+
+  // Always include the full canonical grid in bounds (fountain + all 6 expansion slots)
+  var canonicalCells = getCanonicalGridCells();
+  for (var ci = 0; ci < canonicalCells.length; ci++) {
+    var cp = hexToPixel(canonicalCells[ci].q, canonicalCells[ci].r, HEX_SIZE);
+    minX = Math.min(minX, cp.x - HEX_SIZE);
+    maxX = Math.max(maxX, cp.x + HEX_SIZE);
+    minY = Math.min(minY, cp.y - HEX_SIZE);
+    maxY = Math.max(maxY, cp.y + HEX_SIZE);
+  }
+
+  // Also include expansion tile options and candidates in bounds
   if (State.expansionTilePlacing) {
-    // Show expansion tile options — render continues below
     for (var et = 0; et < State.expansionTileOptions.length; et++) {
       var ep = hexToPixel(State.expansionTileOptions[et].q, State.expansionTileOptions[et].r, HEX_SIZE);
       minX = Math.min(minX, ep.x - HEX_SIZE);
       maxX = Math.max(maxX, ep.x + HEX_SIZE);
       minY = Math.min(minY, ep.y - HEX_SIZE);
       maxY = Math.max(maxY, ep.y + HEX_SIZE);
-    }
-  }
-  if (State.placingExpansion) {
-    for (var bc = 0; bc < State.expansionCandidates.length; bc++) {
-      var bp = hexToPixel(State.expansionCandidates[bc].q, State.expansionCandidates[bc].r, HEX_SIZE);
-      minX = Math.min(minX, bp.x - HEX_SIZE * 2.5);
-      maxX = Math.max(maxX, bp.x + HEX_SIZE * 2.5);
-      minY = Math.min(minY, bp.y - HEX_SIZE * 2.5);
-      maxY = Math.max(maxY, bp.y + HEX_SIZE * 2.5);
     }
   }
 
@@ -1961,6 +1967,60 @@ function renderGarden() {
   svg.setAttribute('height', h);
   svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
   svg.classList.add('garden-svg');
+
+  // Render canonical expansion slot outlines (unfilled slots shown as faint hex flowers)
+  var candidateSet = new Set();
+  if (State.placingExpansion) {
+    for (var eci = 0; eci < State.expansionCandidates.length; eci++) {
+      candidateSet.add(hexKey(State.expansionCandidates[eci].q, State.expansionCandidates[eci].r));
+    }
+  }
+  for (var si = 0; si < EXPANSION_SLOT_CENTERS.length; si++) {
+    if (State.usedExpansionSlots.indexOf(si) !== -1) continue; // Already placed
+    var center = EXPANSION_SLOT_CENTERS[si];
+    var isCandidate = candidateSet.has(hexKey(center.q, center.r));
+    var slotCells = getExpansionSlotCells(center.q, center.r);
+    for (var sc = 0; sc < slotCells.length; sc++) {
+      var slotCell = slotCells[sc];
+      if (garden.has(hexKey(slotCell.q, slotCell.r))) continue; // Already in garden
+      var sp = hexToPixel(slotCell.q, slotCell.r, HEX_SIZE);
+      var scx = sp.x + offX;
+      var scy = sp.y + offY;
+      var sg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      var spoly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      spoly.setAttribute('points', hexPoints(scx, scy, HEX_SIZE - 1));
+      if (isCandidate) {
+        // Active expansion placement mode — highlight clickable
+        spoly.style.fill = '#fff3e0';
+        spoly.style.stroke = 'var(--warning)';
+        spoly.style.strokeWidth = '2';
+        spoly.style.strokeDasharray = '4 2';
+        spoly.style.cursor = 'pointer';
+        (function(cq, cr) {
+          spoly.addEventListener('click', function() { handleHexClick(cq, cr); });
+        })(center.q, center.r);
+      } else {
+        // Faint outline showing available slot
+        spoly.style.fill = 'rgba(200, 200, 200, 0.08)';
+        spoly.style.stroke = 'rgba(150, 150, 150, 0.25)';
+        spoly.style.strokeWidth = '1';
+        spoly.style.strokeDasharray = '3 3';
+      }
+      sg.appendChild(spoly);
+      // Show pavilion icon on center hex of each slot
+      if (sc === 0 && isCandidate) {
+        var stxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        stxt.setAttribute('x', scx);
+        stxt.setAttribute('y', scy);
+        stxt.classList.add('hex-pattern');
+        stxt.style.fill = 'var(--warning)';
+        stxt.style.fontSize = '12px';
+        stxt.textContent = '🏛️';
+        sg.appendChild(stxt);
+      }
+      svg.appendChild(sg);
+    }
+  }
 
   garden.forEach(function(cell) {
     var p = hexToPixel(cell.q, cell.r, HEX_SIZE);
@@ -2060,39 +2120,7 @@ var SVG_PATTERNS = {
     svg.appendChild(g);
   });
 
-  // Render expansion candidate hexes outside the current garden
-  if (State.placingExpansion) {
-    for (var ec2 = 0; ec2 < State.expansionCandidates.length; ec2++) {
-      var cand = State.expansionCandidates[ec2];
-      if (garden.has(hexKey(cand.q, cand.r))) continue; // already rendered above
-      var cp = hexToPixel(cand.q, cand.r, HEX_SIZE);
-      var ccx = cp.x + offX;
-      var ccy = cp.y + offY;
-      var cg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      var cpoly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      cpoly.setAttribute('points', hexPoints(ccx, ccy, HEX_SIZE - 1));
-      cpoly.classList.add('hex-cell');
-      cpoly.classList.add('valid-target');
-      cpoly.style.fill = '#fff3e0';
-      cpoly.style.stroke = 'var(--warning)';
-      cpoly.style.strokeWidth = '2';
-      cpoly.style.strokeDasharray = '4 2';
-      (function(cq, cr) {
-        cpoly.addEventListener('click', function() { handleHexClick(cq, cr); });
-      })(cand.q, cand.r);
-      cg.appendChild(cpoly);
-      // Add pavilion icon
-      var ctxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      ctxt.setAttribute('x', ccx);
-      ctxt.setAttribute('y', ccy);
-      ctxt.classList.add('hex-pattern');
-      ctxt.style.fill = 'var(--warning)';
-      ctxt.style.fontSize = '12px';
-      ctxt.textContent = '🏛️';
-      cg.appendChild(ctxt);
-      svg.appendChild(cg);
-    }
-  }
+  // (Expansion slot outlines are now rendered before garden cells above)
 
   container.appendChild(svg);
 }
@@ -2801,7 +2829,7 @@ function expandAiGarden(playerIdx, garden, aiExp, aiStorage) {
   }
 
   // Use the same valid center logic as the player
-  var centers = findValidExpansionCenters(garden);
+  var centers = findValidExpansionCenters();
   if (centers.length === 0) return;
 
   // Pick center with most adjacency to existing garden
@@ -2834,6 +2862,13 @@ function expandAiGarden(playerIdx, garden, aiExp, aiStorage) {
     garden.set(hexKey(nbrs[n].q, nbrs[n].r), {
       q: nbrs[n].q, r: nbrs[n].r, tile: null, feature: null
     });
+  }
+
+  // Mark the canonical slot as used
+  if (bestCenter.slotIndex !== undefined) {
+    if (State.usedExpansionSlots.indexOf(bestCenter.slotIndex) === -1) {
+      State.usedExpansionSlots.push(bestCenter.slotIndex);
+    }
   }
 
   // Place the expansion's tile on a random outer hex
