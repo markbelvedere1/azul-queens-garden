@@ -271,7 +271,7 @@ main {
 <body>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.0 — Complete</span>
+  <span class="phase-tag">v1.1 — Fixed drafting + expansion placement</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -513,6 +513,8 @@ var State = {
   expansionStorage: [],  // max 2 expansions
   log: [],
   phase: 'acquire', // acquire | place | pass | roundEnd
+  placingExpansion: false,
+  expansionCandidates: [],
   roundPassed: [],  // players who have passed this round
   // Scoring wheel (Phase 4)
   scoringWheel: [],     // 12 attributes (6 colors + 6 patterns), shuffled
@@ -528,6 +530,8 @@ function initGame() {
   State.currentPlayer = 0;
   State.selectedStorageTile = null;
   State.selectedHex = null;
+  State.placingExpansion = false;
+  State.expansionCandidates = [];
   State.log = [];
   State.phase = 'acquire';
   State.roundPassed = [false, false, false, false];
@@ -572,25 +576,24 @@ function setupRoundDisplay() {
   State.expansionStack = [];
   State.displayExpansions = [];
 
-  // Take EXPANSIONS_PER_ROUND expansions for this round
   var roundExps = State.allExpansions.splice(0, EXPANSIONS_PER_ROUND);
-
-  // All start face-down in the stack with tiles on top
   for (var i = 0; i < roundExps.length; i++) {
     var exp = roundExps[i];
     exp.faceUp = false;
     exp.tilesOnTop = [];
-    // Draw TILES_PER_EXPANSION tiles from bag onto this expansion
-    for (var t = 0; t < TILES_PER_EXPANSION; t++) {
-      if (State.bag.length) {
-        exp.tilesOnTop.push(State.bag.pop());
-      }
-    }
     State.expansionStack.push(exp);
   }
+  // Only the top expansion gets tiles drawn from the bag
+  drawTilesOntoTopExpansion();
+  addLog('Round ' + State.round + ': ' + roundExps.length + ' expansions in stack, ' + State.bag.length + ' tiles in bag.');
+}
 
-  addLog('Round ' + State.round + ': ' + roundExps.length + ' expansions placed, ' +
-    State.bag.length + ' tiles remain in bag.');
+function drawTilesOntoTopExpansion() {
+  if (State.expansionStack.length === 0) return;
+  var top = State.expansionStack[0];
+  for (var t = 0; t < TILES_PER_EXPANSION; t++) {
+    if (State.bag.length) top.tilesOnTop.push(State.bag.pop());
+  }
 }
 
 // === ACQUIRE ACTION ===
@@ -598,21 +601,35 @@ function getAcquireMatches(type, value) {
   var matchedTiles = [];
   var matchedExpansions = [];
 
-  // Check tiles on top of stacked expansions
-  for (var i = 0; i < State.expansionStack.length; i++) {
-    var exp = State.expansionStack[i];
-    for (var t = 0; t < exp.tilesOnTop.length; t++) {
-      var tile = exp.tilesOnTop[t];
-      if (type === 'color' && tile.color === value) matchedTiles.push({ source: 'stack', expIdx: i, tileIdx: t, tile: tile });
-      if (type === 'pattern' && tile.pattern === value) matchedTiles.push({ source: 'stack', expIdx: i, tileIdx: t, tile: tile });
+  // Only check tiles on the TOP expansion of the stack
+  if (State.expansionStack.length > 0) {
+    var topExp = State.expansionStack[0];
+    for (var t = 0; t < topExp.tilesOnTop.length; t++) {
+      var tile = topExp.tilesOnTop[t];
+      if ((type === 'color' && tile.color === value) || (type === 'pattern' && tile.pattern === value)) {
+        matchedTiles.push({ source: 'stack', expIdx: 0, tileIdx: t, tile: tile });
+      }
     }
   }
 
-  // Check face-up expansions in display
-  for (var j = 0; j < State.displayExpansions.length; j++) {
-    var dExp = State.displayExpansions[j];
-    if (type === 'color' && dExp.color === value) matchedExpansions.push({ source: 'display', expIdx: j, exp: dExp });
-    if (type === 'pattern' && dExp.pattern === value) matchedExpansions.push({ source: 'display', expIdx: j, exp: dExp });
+  // Check display area expansions: tiles on non-face-up expansions + face-up expansion acquisition
+  for (var d = 0; d < State.displayExpansions.length; d++) {
+    var dExp = State.displayExpansions[d];
+    // Tiles remaining on display expansions (moved from stack but not yet empty)
+    if (dExp.tilesOnTop && dExp.tilesOnTop.length > 0 && !dExp.faceUp) {
+      for (var dt = 0; dt < dExp.tilesOnTop.length; dt++) {
+        var dTile = dExp.tilesOnTop[dt];
+        if ((type === 'color' && dTile.color === value) || (type === 'pattern' && dTile.pattern === value)) {
+          matchedTiles.push({ source: 'display', expIdx: d, tileIdx: dt, tile: dTile });
+        }
+      }
+    }
+    // Face-up expansions can be acquired (for expansion storage)
+    if (dExp.faceUp) {
+      if ((type === 'color' && dExp.color === value) || (type === 'pattern' && dExp.pattern === value)) {
+        matchedExpansions.push({ source: 'display', expIdx: d, exp: dExp });
+      }
+    }
   }
 
   return { tiles: matchedTiles, expansions: matchedExpansions };
@@ -626,68 +643,73 @@ function executeAcquire(type, value) {
     return false;
   }
 
-  // Check storage capacity
   var tileSpace = 12 - State.storage.length;
   var expSpace = 2 - State.expansionStorage.length;
 
   if (matches.tiles.length > tileSpace) {
-    addLog('Not enough storage space! Need ' + matches.tiles.length + ' slots, have ' + tileSpace + '.');
+    addLog('Not enough storage! Need ' + matches.tiles.length + ' slots, have ' + tileSpace + '.');
     return false;
   }
-
   if (matches.expansions.length > expSpace) {
-    addLog('Not enough expansion storage! Need ' + matches.expansions.length + ' slots, have ' + expSpace + '.');
+    addLog('Not enough expansion storage!');
     return false;
   }
 
-  // Collect tiles (work backwards to avoid index shifting)
   var tilesCollected = 0;
-  // Group by expansion index, process each
-  var expIndicesAffected = new Set();
-  // Sort matches by expIdx descending, tileIdx descending for safe removal
-  matches.tiles.sort(function(a, b) {
-    if (a.expIdx !== b.expIdx) return b.expIdx - a.expIdx;
-    return b.tileIdx - a.tileIdx;
-  });
+  var tookFromStack = false;
 
-  for (var i = 0; i < matches.tiles.length; i++) {
-    var m = matches.tiles[i];
-    State.storage.push(m.tile);
-    State.expansionStack[m.expIdx].tilesOnTop.splice(m.tileIdx, 1);
-    expIndicesAffected.add(m.expIdx);
+  // Separate tiles by source
+  var stackTiles = matches.tiles.filter(function(m) { return m.source === 'stack'; });
+  var displayTiles = matches.tiles.filter(function(m) { return m.source === 'display'; });
+
+  // Remove tiles from top stack expansion (index 0 only)
+  stackTiles.sort(function(a, b) { return b.tileIdx - a.tileIdx; });
+  for (var i = 0; i < stackTiles.length; i++) {
+    State.storage.push(stackTiles[i].tile);
+    State.expansionStack[0].tilesOnTop.splice(stackTiles[i].tileIdx, 1);
     tilesCollected++;
+    tookFromStack = true;
   }
 
-  // Process affected expansions: if tiles removed and now empty → flip face-up to display
-  // Process from highest index first
-  var affectedArr = Array.from(expIndicesAffected).sort(function(a, b) { return b - a; });
-  for (var j = 0; j < affectedArr.length; j++) {
-    var idx = affectedArr[j];
-    var exp = State.expansionStack[idx];
-    if (exp.tilesOnTop.length === 0) {
-      // Expansion is now empty → flip face-up and move to display
-      exp.faceUp = true;
-      State.displayExpansions.push(exp);
-      State.expansionStack.splice(idx, 1);
-      addLog('Expansion flipped face-up: ' + exp.colorName + ' ' + exp.patternName);
+  // Remove tiles from display area expansions
+  var displayByExp = {};
+  for (var d = 0; d < displayTiles.length; d++) {
+    var eIdx = displayTiles[d].expIdx;
+    if (!displayByExp[eIdx]) displayByExp[eIdx] = [];
+    displayByExp[eIdx].push(displayTiles[d]);
+  }
+  var dKeys = Object.keys(displayByExp).sort(function(a, b) { return parseInt(b) - parseInt(a); });
+  for (var k = 0; k < dKeys.length; k++) {
+    var dTiles = displayByExp[dKeys[k]];
+    dTiles.sort(function(a, b) { return b.tileIdx - a.tileIdx; });
+    for (var t = 0; t < dTiles.length; t++) {
+      State.storage.push(dTiles[t].tile);
+      State.displayExpansions[parseInt(dKeys[k])].tilesOnTop.splice(dTiles[t].tileIdx, 1);
+      tilesCollected++;
+    }
+  }
 
-      // If there's a next expansion on the stack, draw new tiles onto it
-      // (In the real game, the "next" expansion gets revealed and loaded)
-      // Actually each expansion already has its own tiles. The stack just shows the top one.
-      // When tiles are removed from the TOP expansion on stack: that expansion moves to display,
-      // the next one is revealed, 4 new tiles drawn onto it.
-      // But for simplicity in our model each expansion has its own tiles pre-loaded.
-      // No need to re-draw tiles since they're pre-loaded.
+  // If took from stack top: move that expansion to display, load new top with tiles
+  if (tookFromStack && State.expansionStack.length > 0) {
+    var movedExp = State.expansionStack.shift();
+    State.displayExpansions.push(movedExp);
+    drawTilesOntoTopExpansion();
+  }
+
+  // Flip any display expansions with 0 tiles to face-up
+  for (var f = 0; f < State.displayExpansions.length; f++) {
+    var de = State.displayExpansions[f];
+    if (!de.faceUp && (!de.tilesOnTop || de.tilesOnTop.length === 0)) {
+      de.faceUp = true;
+      addLog('Expansion flipped: ' + de.colorName + ' ' + de.patternName);
     }
   }
 
   // Collect matching face-up expansions
   var expsCollected = 0;
-  // Sort by index descending
   matches.expansions.sort(function(a, b) { return b.expIdx - a.expIdx; });
-  for (var k = 0; k < matches.expansions.length; k++) {
-    var em = matches.expansions[k];
-    // Find current index (may have shifted if we added new ones above)
+  for (var e = 0; e < matches.expansions.length; e++) {
+    var em = matches.expansions[e];
     var currentIdx = State.displayExpansions.indexOf(em.exp);
     if (currentIdx >= 0) {
       State.expansionStorage.push(em.exp);
@@ -894,35 +916,120 @@ function placeTile(q, r, tileIndex) {
 }
 
 // === EXPANSION PLACEMENT (Phase 3) ===
+function enterExpansionPlacementMode() {
+  if (State.expansionStorage.length === 0) {
+    addLog('No expansions in storage!');
+    return;
+  }
+  // Find all valid pavilion center candidates (hexes not in garden but adjacent to garden)
+  var candidates = [];
+  var seen = new Set();
+  State.garden.forEach(function(cell) {
+    var nbrs = hexNeighbors(cell.q, cell.r);
+    for (var i = 0; i < nbrs.length; i++) {
+      var n = nbrs[i];
+      var key = hexKey(n.q, n.r);
+      if (!State.garden.has(key) && !seen.has(key)) {
+        seen.add(key);
+        // Check that at least 4 of the 6 surrounding hexes of this candidate are available
+        // (not in garden or are also outside — we need room for a 7-hex cluster)
+        var surroundAvail = 0;
+        var sNbrs = hexNeighbors(n.q, n.r);
+        for (var s = 0; s < sNbrs.length; s++) {
+          var sKey = hexKey(sNbrs[s].q, sNbrs[s].r);
+          if (!State.garden.has(sKey)) surroundAvail++;
+        }
+        if (surroundAvail >= 4) {
+          candidates.push({ q: n.q, r: n.r });
+        }
+      }
+    }
+  });
+
+  if (candidates.length === 0) {
+    addLog('No valid spots to place an expansion!');
+    return;
+  }
+
+  State.placingExpansion = true;
+  State.expansionCandidates = candidates;
+  State.selectedStorageTile = null;
+  addLog('Click a highlighted hex to place expansion center (pavilion). Click Cancel to abort.');
+  renderAll();
+}
+
+function cancelExpansionPlacement() {
+  State.placingExpansion = false;
+  State.expansionCandidates = [];
+  renderAll();
+}
+
+function confirmExpansionPlacement(q, r) {
+  if (State.expansionStorage.length === 0) return false;
+  var exp = State.expansionStorage[0];
+
+  // Place pavilion at center
+  var cluster = [{ q: q, r: r, feature: 'pavilion' }];
+
+  // Add surrounding hexes that aren't already in the garden
+  var nbrs = hexNeighbors(q, r);
+  for (var i = 0; i < nbrs.length; i++) {
+    var nKey = hexKey(nbrs[i].q, nbrs[i].r);
+    if (!State.garden.has(nKey)) {
+      cluster.push({ q: nbrs[i].q, r: nbrs[i].r, feature: null });
+    }
+    if (cluster.length >= 7) break;
+  }
+
+  // If we don't have 7, try one more ring out
+  if (cluster.length < 7) {
+    for (var c = 1; c < cluster.length && cluster.length < 7; c++) {
+      var cNbrs = hexNeighbors(cluster[c].q, cluster[c].r);
+      for (var cn = 0; cn < cNbrs.length && cluster.length < 7; cn++) {
+        var cnKey = hexKey(cNbrs[cn].q, cNbrs[cn].r);
+        if (!State.garden.has(cnKey)) {
+          var already = false;
+          for (var x = 0; x < cluster.length; x++) {
+            if (cluster[x].q === cNbrs[cn].q && cluster[x].r === cNbrs[cn].r) { already = true; break; }
+          }
+          if (!already) cluster.push({ q: cNbrs[cn].q, r: cNbrs[cn].r, feature: null });
+        }
+      }
+    }
+  }
+
+  // Add to garden
+  for (var j = 0; j < cluster.length; j++) {
+    var h = cluster[j];
+    State.garden.set(hexKey(h.q, h.r), {
+      q: h.q, r: h.r, tile: null, feature: h.feature
+    });
+  }
+
+  State.expansionStorage.splice(0, 1);
+  State.placingExpansion = false;
+  State.expansionCandidates = [];
+  addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + ' (+' + cluster.length + ' hexes)');
+  renderAll();
+  return true;
+}
+
+// Legacy wrapper for AI
 function placeExpansion(expIndex) {
   if (expIndex >= State.expansionStorage.length) return false;
   var exp = State.expansionStorage[expIndex];
-
-  // Find valid attachment points - expansion must connect to existing garden
-  // For simplicity: add 7 new hexes around the garden edge
-  // In real game: expansion is a specific 7-hex shape with pavilion center
-  // We'll approximate by finding a cluster of empty spaces adjacent to the garden
-
   var edgeHexes = findExpansionAttachPoints();
-  if (edgeHexes.length === 0) {
-    addLog('No valid spots to attach this expansion!');
-    return false;
-  }
-
-  // Auto-place at best spot (first valid cluster of 7)
+  if (edgeHexes.length === 0) return false;
   var cluster = edgeHexes.slice(0, 7);
-
-  // Add new hexes to garden
   for (var i = 0; i < cluster.length; i++) {
     var h = cluster[i];
     if (!State.garden.has(hexKey(h.q, h.r))) {
       State.garden.set(hexKey(h.q, h.r), {
         q: h.q, r: h.r, tile: null,
-        feature: i === 0 ? 'pavilion' : null // first hex is pavilion center
+        feature: i === 0 ? 'pavilion' : null
       });
     }
   }
-
   State.expansionStorage.splice(expIndex, 1);
   addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + ' (+7 hexes)');
   renderAll();
@@ -1263,23 +1370,23 @@ function renderDisplay() {
   var row = document.getElementById('displayRow');
   while (row.firstChild) row.removeChild(row.firstChild);
 
-  // Render expansion stack items
-  for (var i = 0; i < State.expansionStack.length; i++) {
-    var exp = State.expansionStack[i];
+  // Render the TOP expansion from the stack (the only one with tiles)
+  if (State.expansionStack.length > 0) {
+    var topExp = State.expansionStack[0];
     var item = document.createElement('div');
     item.classList.add('exp-stack-item');
+    item.style.borderColor = 'var(--accent)';
 
     var label = document.createElement('div');
     label.classList.add('exp-label');
-    label.textContent = 'Stack #' + (i + 1) + ' (face-down)';
+    label.textContent = 'Current Stack Top (' + State.expansionStack.length + ' remaining)';
     item.appendChild(label);
 
-    // Show tiles on top
-    if (exp.tilesOnTop.length > 0) {
+    if (topExp.tilesOnTop.length > 0) {
       var tilesDiv = document.createElement('div');
       tilesDiv.classList.add('exp-tiles');
-      for (var t = 0; t < exp.tilesOnTop.length; t++) {
-        var tile = exp.tilesOnTop[t];
+      for (var t = 0; t < topExp.tilesOnTop.length; t++) {
+        var tile = topExp.tilesOnTop[t];
         var pip = document.createElement('div');
         pip.classList.add('exp-tile-pip');
         pip.style.background = tile.colorHex;
@@ -1295,36 +1402,57 @@ function renderDisplay() {
       empty.textContent = 'No tiles';
       item.appendChild(empty);
     }
-
     row.appendChild(item);
   }
 
-  // Render face-up display expansions
+  // Render display area expansions (moved from stack)
   for (var j = 0; j < State.displayExpansions.length; j++) {
     var dExp = State.displayExpansions[j];
     var dItem = document.createElement('div');
     dItem.classList.add('exp-stack-item');
-    dItem.classList.add('face-up');
 
-    var dLabel = document.createElement('div');
-    dLabel.classList.add('exp-label');
-    dLabel.textContent = 'Expansion (face-up)';
-    dItem.appendChild(dLabel);
+    if (dExp.faceUp) {
+      // Face-up expansion (no tiles, can be acquired)
+      dItem.classList.add('face-up');
+      var dLabel = document.createElement('div');
+      dLabel.classList.add('exp-label');
+      dLabel.textContent = 'Expansion (face-up)';
+      dItem.appendChild(dLabel);
 
-    var combo = document.createElement('div');
-    combo.classList.add('exp-combo');
-    combo.textContent = dExp.patternIcon + ' ' + dExp.colorName + ' ' + dExp.patternName;
-    dItem.appendChild(combo);
+      var combo = document.createElement('div');
+      combo.classList.add('exp-combo');
+      combo.textContent = dExp.patternIcon + ' ' + dExp.colorName + ' ' + dExp.patternName;
+      dItem.appendChild(combo);
 
-    // Show a visual indicator of the expansion's color
-    var swatch = document.createElement('div');
-    swatch.style.width = '100%';
-    swatch.style.height = '8px';
-    swatch.style.borderRadius = '4px';
-    swatch.style.background = dExp.colorHex;
-    swatch.style.marginTop = '4px';
-    dItem.appendChild(swatch);
+      var swatch = document.createElement('div');
+      swatch.style.width = '100%';
+      swatch.style.height = '8px';
+      swatch.style.borderRadius = '4px';
+      swatch.style.background = dExp.colorHex;
+      swatch.style.marginTop = '4px';
+      dItem.appendChild(swatch);
+    } else {
+      // Display expansion with remaining tiles
+      var dtLabel = document.createElement('div');
+      dtLabel.classList.add('exp-label');
+      dtLabel.textContent = 'In Display (' + dExp.tilesOnTop.length + ' tiles)';
+      dItem.appendChild(dtLabel);
 
+      if (dExp.tilesOnTop.length > 0) {
+        var dtDiv = document.createElement('div');
+        dtDiv.classList.add('exp-tiles');
+        for (var dt = 0; dt < dExp.tilesOnTop.length; dt++) {
+          var dTile = dExp.tilesOnTop[dt];
+          var dPip = document.createElement('div');
+          dPip.classList.add('exp-tile-pip');
+          dPip.style.background = dTile.colorHex;
+          dPip.textContent = dTile.patternIcon;
+          dPip.title = dTile.colorName + ' ' + dTile.patternName + ' (cost ' + dTile.cost + ')';
+          dtDiv.appendChild(dPip);
+        }
+        dItem.appendChild(dtDiv);
+      }
+    }
     row.appendChild(dItem);
   }
 
@@ -1334,7 +1462,7 @@ function renderDisplay() {
     emptyMsg.style.fontSize = '0.8rem';
     emptyMsg.style.color = '#999';
     emptyMsg.style.padding = '20px';
-    emptyMsg.textContent = 'Display empty — round will end when all players pass.';
+    emptyMsg.textContent = 'Display empty — round ends when all players pass.';
     row.appendChild(emptyMsg);
   }
 
@@ -1359,6 +1487,16 @@ function renderGarden() {
     minY = Math.min(minY, p.y - HEX_SIZE);
     maxY = Math.max(maxY, p.y + HEX_SIZE);
   });
+  // Include expansion candidates in bounds
+  if (State.placingExpansion) {
+    for (var bc = 0; bc < State.expansionCandidates.length; bc++) {
+      var bp = hexToPixel(State.expansionCandidates[bc].q, State.expansionCandidates[bc].r, HEX_SIZE);
+      minX = Math.min(minX, bp.x - HEX_SIZE);
+      maxX = Math.max(maxX, bp.x + HEX_SIZE);
+      minY = Math.min(minY, bp.y - HEX_SIZE);
+      maxY = Math.max(maxY, bp.y + HEX_SIZE);
+    }
+  }
 
   var pad = 10;
   var w = maxX - minX + pad * 2;
@@ -1401,7 +1539,17 @@ var SVG_PATTERNS = {
       poly.classList.add('fountain');
     }
 
-    if (State.selectedStorageTile !== null) {
+    if (State.placingExpansion) {
+      // Highlight expansion placement candidates
+      for (var ec = 0; ec < State.expansionCandidates.length; ec++) {
+        if (State.expansionCandidates[ec].q === cell.q && State.expansionCandidates[ec].r === cell.r) {
+          poly.classList.add('valid-target');
+          poly.style.fill = '#fff3e0';
+          poly.style.stroke = 'var(--warning)';
+          break;
+        }
+      }
+    } else if (State.selectedStorageTile !== null) {
       var stile = State.storage[State.selectedStorageTile];
       if (stile && !cell.tile && canPlaceTile(cell.q, cell.r, stile)) {
         poly.classList.add('valid-target');
@@ -1448,6 +1596,40 @@ var SVG_PATTERNS = {
 
     svg.appendChild(g);
   });
+
+  // Render expansion candidate hexes outside the current garden
+  if (State.placingExpansion) {
+    for (var ec2 = 0; ec2 < State.expansionCandidates.length; ec2++) {
+      var cand = State.expansionCandidates[ec2];
+      if (garden.has(hexKey(cand.q, cand.r))) continue; // already rendered above
+      var cp = hexToPixel(cand.q, cand.r, HEX_SIZE);
+      var ccx = cp.x + offX;
+      var ccy = cp.y + offY;
+      var cg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      var cpoly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      cpoly.setAttribute('points', hexPoints(ccx, ccy, HEX_SIZE - 1));
+      cpoly.classList.add('hex-cell');
+      cpoly.classList.add('valid-target');
+      cpoly.style.fill = '#fff3e0';
+      cpoly.style.stroke = 'var(--warning)';
+      cpoly.style.strokeWidth = '2';
+      cpoly.style.strokeDasharray = '4 2';
+      (function(cq, cr) {
+        cpoly.addEventListener('click', function() { handleHexClick(cq, cr); });
+      })(cand.q, cand.r);
+      cg.appendChild(cpoly);
+      // Add pavilion icon
+      var ctxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      ctxt.setAttribute('x', ccx);
+      ctxt.setAttribute('y', ccy);
+      ctxt.classList.add('hex-pattern');
+      ctxt.style.fill = 'var(--warning)';
+      ctxt.style.fontSize = '12px';
+      ctxt.textContent = '🏛️';
+      cg.appendChild(ctxt);
+      svg.appendChild(cg);
+    }
+  }
 
   container.appendChild(svg);
 }
@@ -1585,6 +1767,10 @@ function updateInfoBar() {
     bar.textContent = 'Waiting for ' + State.players[State.currentPlayer].name + '...';
     return;
   }
+  if (State.placingExpansion) {
+    bar.textContent = 'EXPANSION MODE: Click a highlighted hex to place pavilion center. Click "Place Expansion" again to cancel.';
+    return;
+  }
   if (State.selectedStorageTile !== null) {
     var tile = State.storage[State.selectedStorageTile];
     var valid = getValidPlacements(tile).length;
@@ -1602,7 +1788,9 @@ function updateButtons() {
   var isHumanTurn = State.currentPlayer === 0 && !State.roundPassed[0];
   var canPlace = State.selectedStorageTile !== null && isHumanTurn && canAffordPlacement(State.selectedStorageTile);
   document.getElementById('btnPlace').disabled = !canPlace;
-  document.getElementById('btnPlaceExp').disabled = !isHumanTurn || State.expansionStorage.length === 0;
+  var expBtn = document.getElementById('btnPlaceExp');
+  expBtn.disabled = !isHumanTurn || (State.expansionStorage.length === 0 && !State.placingExpansion);
+  expBtn.textContent = State.placingExpansion ? 'Cancel Expansion' : 'Place Expansion';
   document.getElementById('btnPass').disabled = !isHumanTurn;
   document.getElementById('btnAcquire').disabled = !isHumanTurn;
 }
@@ -1647,6 +1835,25 @@ function handleStorageClick(index) {
 
 function handleHexClick(q, r) {
   if (State.currentPlayer !== 0) return;
+
+  // Expansion placement mode
+  if (State.placingExpansion) {
+    var isCandidate = false;
+    for (var i = 0; i < State.expansionCandidates.length; i++) {
+      if (State.expansionCandidates[i].q === q && State.expansionCandidates[i].r === r) {
+        isCandidate = true;
+        break;
+      }
+    }
+    if (isCandidate) {
+      if (confirmExpansionPlacement(q, r)) {
+        endTurn();
+      }
+    }
+    return;
+  }
+
+  // Normal tile placement
   if (State.selectedStorageTile === null) return;
   var tile = State.storage[State.selectedStorageTile];
   if (!tile) return;
@@ -1680,6 +1887,8 @@ function endTurn() {
 
   State.currentPlayer = next;
   State.selectedStorageTile = null;
+  State.placingExpansion = false;
+  State.expansionCandidates = [];
   renderAll();
 
   // AI turn
@@ -1713,29 +1922,50 @@ function aiTurn() {
     // Execute acquire
     var matches = getAcquireMatches(action.attrType, action.attrValue);
     var collected = 0;
-    // Remove matching tiles from display
-    matches.tiles.sort(function(a, b) {
-      if (a.expIdx !== b.expIdx) return b.expIdx - a.expIdx;
-      return b.tileIdx - a.tileIdx;
-    });
-    for (var i = 0; i < matches.tiles.length; i++) {
-      var mt = matches.tiles[i];
+    var aiTookFromStack = false;
+    // Separate tiles by source
+    var aiStackTiles = matches.tiles.filter(function(m) { return m.source === 'stack'; });
+    var aiDisplayTiles = matches.tiles.filter(function(m) { return m.source === 'display'; });
+    // Remove from stack top
+    aiStackTiles.sort(function(a, b) { return b.tileIdx - a.tileIdx; });
+    for (var i = 0; i < aiStackTiles.length; i++) {
       if (aiStorage.length < 12) {
-        aiStorage.push(mt.tile);
+        aiStorage.push(aiStackTiles[i].tile);
         collected++;
       }
-      State.expansionStack[mt.expIdx].tilesOnTop.splice(mt.tileIdx, 1);
+      State.expansionStack[0].tilesOnTop.splice(aiStackTiles[i].tileIdx, 1);
+      aiTookFromStack = true;
     }
-    // Handle empty expansions
-    var affected = new Set();
-    for (var j = 0; j < matches.tiles.length; j++) affected.add(matches.tiles[j].expIdx);
-    var affArr = Array.from(affected).sort(function(a, b) { return b - a; });
-    for (var k = 0; k < affArr.length; k++) {
-      var exp = State.expansionStack[affArr[k]];
-      if (exp.tilesOnTop.length === 0) {
-        exp.faceUp = true;
-        State.displayExpansions.push(exp);
-        State.expansionStack.splice(affArr[k], 1);
+    // Remove from display expansions
+    var aiDispByExp = {};
+    for (var ad = 0; ad < aiDisplayTiles.length; ad++) {
+      var aeIdx = aiDisplayTiles[ad].expIdx;
+      if (!aiDispByExp[aeIdx]) aiDispByExp[aeIdx] = [];
+      aiDispByExp[aeIdx].push(aiDisplayTiles[ad]);
+    }
+    var adKeys = Object.keys(aiDispByExp).sort(function(a, b) { return parseInt(b) - parseInt(a); });
+    for (var ak = 0; ak < adKeys.length; ak++) {
+      var adTiles = aiDispByExp[adKeys[ak]];
+      adTiles.sort(function(a, b) { return b.tileIdx - a.tileIdx; });
+      for (var at2 = 0; at2 < adTiles.length; at2++) {
+        if (aiStorage.length < 12) {
+          aiStorage.push(adTiles[at2].tile);
+          collected++;
+        }
+        State.displayExpansions[parseInt(adKeys[ak])].tilesOnTop.splice(adTiles[at2].tileIdx, 1);
+      }
+    }
+    // Move stack top to display, load new top
+    if (aiTookFromStack && State.expansionStack.length > 0) {
+      var aiMovedExp = State.expansionStack.shift();
+      State.displayExpansions.push(aiMovedExp);
+      drawTilesOntoTopExpansion();
+    }
+    // Flip empty display expansions
+    for (var af = 0; af < State.displayExpansions.length; af++) {
+      var ade = State.displayExpansions[af];
+      if (!ade.faceUp && (!ade.tilesOnTop || ade.tilesOnTop.length === 0)) {
+        ade.faceUp = true;
       }
     }
     // Collect matching face-up expansions
@@ -1831,8 +2061,17 @@ function decideAiAction(playerIdx, storage, expStorage, garden) {
 
   // Check if there are tiles in the display to acquire
   var hasTilesInDisplay = false;
-  for (var i = 0; i < State.expansionStack.length; i++) {
-    if (State.expansionStack[i].tilesOnTop.length > 0) { hasTilesInDisplay = true; break; }
+  // Check top of stack
+  if (State.expansionStack.length > 0 && State.expansionStack[0].tilesOnTop.length > 0) {
+    hasTilesInDisplay = true;
+  }
+  // Also check display area expansions with leftover tiles
+  if (!hasTilesInDisplay) {
+    for (var i = 0; i < State.displayExpansions.length; i++) {
+      if (State.displayExpansions[i].tilesOnTop && State.displayExpansions[i].tilesOnTop.length > 0 && !State.displayExpansions[i].faceUp) {
+        hasTilesInDisplay = true; break;
+      }
+    }
   }
 
   // If storage is full-ish and has placeable tiles, place one
@@ -2073,10 +2312,12 @@ document.getElementById('btnPass').addEventListener('click', function() {
 
 document.getElementById('btnPlaceExp').addEventListener('click', function() {
   if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
+  if (State.placingExpansion) {
+    cancelExpansionPlacement();
+    return;
+  }
   if (State.expansionStorage.length > 0) {
-    if (placeExpansion(0)) {
-      endTurn();
-    }
+    enterExpansionPlacementMode();
   }
 });
 
