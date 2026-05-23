@@ -1037,6 +1037,12 @@ function enterExpansionPlacementMode() {
     addLog('No expansions in storage!');
     return;
   }
+  if (!canAffordExpansion()) {
+    var exp = State.expansionStorage[0];
+    var cost = getExpansionCost(exp);
+    addLog('Cannot afford to place ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + '! Need ' + (cost - 1) + ' matching payment tile(s).');
+    return;
+  }
 
   var candidates = findValidExpansionCenters(State.garden);
 
@@ -1111,6 +1117,7 @@ function confirmExpansionPlacement(q, r) {
     var paymentIndices = getExpansionPayment(exp);
     if (!paymentIndices) {
       addLog('Cannot afford to place this expansion! Need ' + (cost - 1) + ' payment tile(s).');
+      cancelExpansionPlacement();
       return false;
     }
     // Remove payment tiles (highest index first to preserve indices)
