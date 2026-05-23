@@ -978,7 +978,7 @@ function enterExpansionPlacementMode() {
           var sKey = hexKey(sNbrs[s].q, sNbrs[s].r);
           if (!State.garden.has(sKey)) surroundAvail++;
         }
-        if (surroundAvail >= 4) {
+        if (surroundAvail === 6) {
           candidates.push({ q: n.q, r: n.r });
         }
       }
