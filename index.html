@@ -225,7 +225,7 @@ main {
 <body>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">Phase 4 — Scoring + Rounds</span>
+  <span class="phase-tag">Phase 5 — AI Opponents</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -245,7 +245,13 @@ main {
   </div>
   <!-- Garden -->
   <div class="garden-area" id="gardenArea">
-    <h2>Your Garden</h2>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <h2 style="flex:1;font-size:0.9rem;color:var(--accent)" id="gardenTitle">Your Garden</h2>
+      <button class="garden-tab active" id="tabYou" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--accent);color:white;cursor:pointer">You</button>
+      <button class="garden-tab" id="tabAI1" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--surface);cursor:pointer">Greedy</button>
+      <button class="garden-tab" id="tabAI2" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--surface);cursor:pointer">Builder</button>
+      <button class="garden-tab" id="tabAI3" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--surface);cursor:pointer">Balance</button>
+    </div>
     <div id="gardenContainer"></div>
   </div>
   <!-- Sidebar -->
@@ -1293,8 +1299,14 @@ function renderGarden() {
   var container = document.getElementById('gardenContainer');
   while (container.firstChild) container.removeChild(container.firstChild);
 
+  // Choose which garden to render
+  var garden = State.garden;
+  if (viewingGarden > 0 && State.players[viewingGarden] && State.players[viewingGarden].aiGarden) {
+    garden = State.players[viewingGarden].aiGarden;
+  }
+
   var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  State.garden.forEach(function(cell) {
+  garden.forEach(function(cell) {
     var p = hexToPixel(cell.q, cell.r, HEX_SIZE);
     minX = Math.min(minX, p.x - HEX_SIZE);
     maxX = Math.max(maxX, p.x + HEX_SIZE);
@@ -1314,7 +1326,7 @@ function renderGarden() {
   svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
   svg.classList.add('garden-svg');
 
-  State.garden.forEach(function(cell) {
+  garden.forEach(function(cell) {
     var p = hexToPixel(cell.q, cell.r, HEX_SIZE);
     var cx = p.x + offX;
     var cy = p.y + offY;
@@ -1610,43 +1622,43 @@ function endTurn() {
 
 function aiTurn() {
   var p = State.currentPlayer;
-  // Simple AI: try to acquire the color/pattern with most tiles, else pass
-  var bestType = null, bestValue = null, bestCount = 0;
+  var pName = State.players[p].name;
 
-  for (var ci = 0; ci < COLORS.length; ci++) {
-    var m = getAcquireMatches('color', COLORS[ci].id);
-    if (m.tiles.length > bestCount) {
-      bestCount = m.tiles.length;
-      bestType = 'color';
-      bestValue = COLORS[ci].id;
-    }
-  }
-  for (var pi = 0; pi < PATTERNS.length; pi++) {
-    var m2 = getAcquireMatches('pattern', PATTERNS[pi].id);
-    if (m2.tiles.length > bestCount) {
-      bestCount = m2.tiles.length;
-      bestType = 'pattern';
-      bestValue = PATTERNS[pi].id;
-    }
-  }
+  // AI PERSONALITIES (Phase 5)
+  // Greedy: prioritizes tiles matching current scoring wheel
+  // Builder: focuses on building large connected groups
+  // Balanced: manages storage, mix of strategies
 
-  if (bestCount > 0) {
-    // Check if AI has storage space (we'll pretend they have separate storage for now)
-    addLog(State.players[p].name + ' acquires ' + bestCount + ' tiles (' + bestType + ': ' +
-      (bestType === 'color' ? COLOR_MAP[bestValue].name : PATTERN_MAP[bestValue].name) + ')');
-    // Remove the tiles from display (same as player acquire but without adding to player storage)
-    // For now, AI removes tiles from display but doesn't track their board
-    var matches = getAcquireMatches(bestType, bestValue);
-    // Remove tiles from stack
+  // Each AI has its own virtual storage (simplified tracking)
+  if (!State.players[p].aiStorage) State.players[p].aiStorage = [];
+  if (!State.players[p].aiExpStorage) State.players[p].aiExpStorage = [];
+  if (!State.players[p].aiGarden) initAiGarden(p);
+
+  var aiStorage = State.players[p].aiStorage;
+  var aiExpStorage = State.players[p].aiExpStorage;
+  var aiGarden = State.players[p].aiGarden;
+
+  // Decision: Acquire, Place, or Pass
+  var action = decideAiAction(p, aiStorage, aiExpStorage, aiGarden);
+
+  if (action.type === 'acquire') {
+    // Execute acquire
+    var matches = getAcquireMatches(action.attrType, action.attrValue);
+    var collected = 0;
+    // Remove matching tiles from display
     matches.tiles.sort(function(a, b) {
       if (a.expIdx !== b.expIdx) return b.expIdx - a.expIdx;
       return b.tileIdx - a.tileIdx;
     });
     for (var i = 0; i < matches.tiles.length; i++) {
       var mt = matches.tiles[i];
+      if (aiStorage.length < 12) {
+        aiStorage.push(mt.tile);
+        collected++;
+      }
       State.expansionStack[mt.expIdx].tilesOnTop.splice(mt.tileIdx, 1);
     }
-    // Check for empty expansions
+    // Handle empty expansions
     var affected = new Set();
     for (var j = 0; j < matches.tiles.length; j++) affected.add(matches.tiles[j].expIdx);
     var affArr = Array.from(affected).sort(function(a, b) { return b - a; });
@@ -1658,12 +1670,250 @@ function aiTurn() {
         State.expansionStack.splice(affArr[k], 1);
       }
     }
+    // Collect matching face-up expansions
+    var expCollected = 0;
+    matches.expansions.sort(function(a, b) { return b.expIdx - a.expIdx; });
+    for (var e = 0; e < matches.expansions.length; e++) {
+      var em = matches.expansions[e];
+      var currentIdx = State.displayExpansions.indexOf(em.exp);
+      if (currentIdx >= 0 && aiExpStorage.length < 2) {
+        aiExpStorage.push(em.exp);
+        State.displayExpansions.splice(currentIdx, 1);
+        expCollected++;
+      }
+    }
+    var attrName = action.attrType === 'color' ? COLOR_MAP[action.attrValue].name : PATTERN_MAP[action.attrValue].name;
+    addLog(pName + ' acquires ' + collected + ' tile(s)' + (expCollected > 0 ? ' + ' + expCollected + ' exp' : '') + ' (' + attrName + ')');
+
+  } else if (action.type === 'place') {
+    // AI places a tile from their storage
+    var tileToPlace = aiStorage[action.tileIdx];
+    var target = action.target;
+    aiGarden.get(hexKey(target.q, target.r)).tile = tileToPlace;
+    // Remove tile + payment tiles
+    var removeIdxs = [action.tileIdx].concat(action.paymentIdxs || []);
+    removeIdxs.sort(function(a, b) { return b - a; });
+    for (var r = 0; r < removeIdxs.length; r++) {
+      aiStorage.splice(removeIdxs[r], 1);
+    }
+    addLog(pName + ' places ' + tileToPlace.patternIcon + ' ' + tileToPlace.colorName + ' ' + tileToPlace.patternName);
+
+  } else if (action.type === 'placeExp') {
+    // AI places an expansion
+    var aiExp = aiExpStorage.splice(0, 1)[0];
+    expandAiGarden(p, aiGarden);
+    addLog(pName + ' places expansion: ' + aiExp.colorName + ' ' + aiExp.patternName);
+
   } else {
-    addLog(State.players[p].name + ' passes.');
+    addLog(pName + ' passes.');
     State.roundPassed[p] = true;
   }
 
   endTurn();
+}
+
+function initAiGarden(playerIdx) {
+  var garden = new Map();
+  var cells = createFountainLayout();
+  for (var i = 0; i < cells.length; i++) {
+    garden.set(hexKey(cells[i].q, cells[i].r), {
+      q: cells[i].q, r: cells[i].r, tile: null, feature: cells[i].feature
+    });
+  }
+  State.players[playerIdx].aiGarden = garden;
+  // Start with 3 jokers
+  State.players[playerIdx].aiStorage = [];
+  for (var j = 0; j < 3; j++) {
+    if (State.jokerPool.length) {
+      State.players[playerIdx].aiStorage.push(State.jokerPool.shift());
+    }
+  }
+  State.players[playerIdx].aiExpStorage = [];
+}
+
+function expandAiGarden(playerIdx, garden) {
+  // Add 7 hexes around edge
+  var candidates = [];
+  garden.forEach(function(cell) {
+    var nbrs = hexNeighbors(cell.q, cell.r);
+    for (var i = 0; i < nbrs.length; i++) {
+      var nk = hexKey(nbrs[i].q, nbrs[i].r);
+      if (!garden.has(nk)) {
+        candidates.push({ q: nbrs[i].q, r: nbrs[i].r, key: nk });
+      }
+    }
+  });
+  // Deduplicate
+  var used = new Set();
+  var added = 0;
+  for (var j = 0; j < candidates.length && added < 7; j++) {
+    if (!used.has(candidates[j].key)) {
+      used.add(candidates[j].key);
+      garden.set(candidates[j].key, {
+        q: candidates[j].q, r: candidates[j].r, tile: null,
+        feature: added === 0 ? 'pavilion' : null
+      });
+      added++;
+    }
+  }
+}
+
+function decideAiAction(playerIdx, storage, expStorage, garden) {
+  var personality = playerIdx; // 1=Greedy, 2=Builder, 3=Balanced
+
+  // Check if there are tiles in the display to acquire
+  var hasTilesInDisplay = false;
+  for (var i = 0; i < State.expansionStack.length; i++) {
+    if (State.expansionStack[i].tilesOnTop.length > 0) { hasTilesInDisplay = true; break; }
+  }
+
+  // If storage is full-ish and has placeable tiles, place one
+  if (storage.length >= 8 || (!hasTilesInDisplay && storage.length > 0)) {
+    var placeAction = findAiPlacement(playerIdx, storage, garden);
+    if (placeAction) return placeAction;
+  }
+
+  // If has expansion and garden is small, place expansion
+  if (expStorage.length > 0 && countGardenSize(garden) < 25) {
+    return { type: 'placeExp' };
+  }
+
+  // Try to acquire
+  if (hasTilesInDisplay && storage.length < 12) {
+    var acquireAction = findAiAcquire(playerIdx, storage);
+    if (acquireAction) return acquireAction;
+  }
+
+  // Try placing if anything available
+  if (storage.length > 0) {
+    var fallbackPlace = findAiPlacement(playerIdx, storage, garden);
+    if (fallbackPlace) return fallbackPlace;
+  }
+
+  // Place expansion if available
+  if (expStorage.length > 0) {
+    return { type: 'placeExp' };
+  }
+
+  return { type: 'pass' };
+}
+
+function findAiAcquire(playerIdx, storage) {
+  var personality = playerIdx; // 1=Greedy, 2=Builder, 3=Balanced
+  var bestType = null, bestValue = null, bestScore = -1;
+
+  var wheelAttrs = getCurrentWheelAttributes();
+
+  for (var ci = 0; ci < COLORS.length; ci++) {
+    var m = getAcquireMatches('color', COLORS[ci].id);
+    if (m.tiles.length === 0) continue;
+    var score = m.tiles.length;
+
+    if (personality === 1) { // Greedy: bonus for matching wheel
+      for (var w = 0; w < wheelAttrs.length; w++) {
+        if (wheelAttrs[w].type === 'color' && wheelAttrs[w].id === COLORS[ci].id) score += 5;
+      }
+    } else if (personality === 2) { // Builder: prefer colors already in garden
+      score += countColorInGarden(State.players[playerIdx].aiGarden, COLORS[ci].id);
+    }
+    // Balanced (3): just use count
+
+    if (score > bestScore && storage.length + m.tiles.length <= 12) {
+      bestScore = score;
+      bestType = 'color';
+      bestValue = COLORS[ci].id;
+    }
+  }
+
+  for (var pi = 0; pi < PATTERNS.length; pi++) {
+    var m2 = getAcquireMatches('pattern', PATTERNS[pi].id);
+    if (m2.tiles.length === 0) continue;
+    var score2 = m2.tiles.length;
+
+    if (personality === 1) {
+      for (var w2 = 0; w2 < wheelAttrs.length; w2++) {
+        if (wheelAttrs[w2].type === 'pattern' && wheelAttrs[w2].id === PATTERNS[pi].id) score2 += 5;
+      }
+    } else if (personality === 2) {
+      score2 += countPatternInGarden(State.players[playerIdx].aiGarden, PATTERNS[pi].id);
+    }
+
+    if (score2 > bestScore && storage.length + m2.tiles.length <= 12) {
+      bestScore = score2;
+      bestType = 'pattern';
+      bestValue = PATTERNS[pi].id;
+    }
+  }
+
+  if (bestType) return { type: 'acquire', attrType: bestType, attrValue: bestValue };
+  return null;
+}
+
+function findAiPlacement(playerIdx, storage, garden) {
+  // Find a tile that can be placed with valid adjacency and affordable cost
+  for (var i = 0; i < storage.length; i++) {
+    var tile = storage[i];
+    var cost = tile.isJoker ? 0 : tile.cost;
+    // Check if we can afford it
+    if (cost > 1) {
+      var needed = cost - 1;
+      var avail = 0;
+      for (var j = 0; j < storage.length; j++) {
+        if (j === i) continue;
+        if (storage[j].isJoker || storage[j].color === tile.color || storage[j].pattern === tile.pattern) avail++;
+      }
+      if (avail < needed) continue;
+    }
+
+    // Find valid hex in AI garden
+    var validHexes = [];
+    garden.forEach(function(cell, key) {
+      if (cell.tile) return;
+      // Check adjacency
+      var nbrs = hexNeighbors(cell.q, cell.r);
+      var hasAdj = false;
+      var valid = true;
+      for (var n = 0; n < nbrs.length; n++) {
+        var nc = garden.get(hexKey(nbrs[n].q, nbrs[n].r));
+        if (!nc || !nc.tile) continue;
+        hasAdj = true;
+        if (nc.tile.color === tile.color && nc.tile.pattern === tile.pattern) { valid = false; break; }
+        if (!tile.isJoker && !nc.tile.isJoker && nc.tile.color !== tile.color && nc.tile.pattern !== tile.pattern) { valid = false; break; }
+      }
+      var gardenHasTiles = false;
+      garden.forEach(function(c) { if (c.tile) gardenHasTiles = true; });
+      if (gardenHasTiles && !hasAdj) return;
+      if (valid) validHexes.push({ q: cell.q, r: cell.r });
+    });
+
+    if (validHexes.length > 0) {
+      // Build payment indices
+      var payIdxs = [];
+      if (cost > 1) {
+        var need = cost - 1;
+        for (var p = 0; p < storage.length && payIdxs.length < need; p++) {
+          if (p === i) continue;
+          if (storage[p].isJoker || storage[p].color === tile.color || storage[p].pattern === tile.pattern) {
+            payIdxs.push(p);
+          }
+        }
+      }
+      return { type: 'place', tileIdx: i, target: validHexes[0], paymentIdxs: payIdxs };
+    }
+  }
+  return null;
+}
+
+function countGardenSize(garden) { var c = 0; garden.forEach(function() { c++; }); return c; }
+function countColorInGarden(garden, colorId) {
+  var c = 0;
+  garden.forEach(function(cell) { if (cell.tile && cell.tile.color === colorId) c++; });
+  return c;
+}
+function countPatternInGarden(garden, patternId) {
+  var c = 0;
+  garden.forEach(function(cell) { if (cell.tile && cell.tile.pattern === patternId) c++; });
+  return c;
 }
 
 function endRound() {
@@ -1674,11 +1924,13 @@ function endRound() {
   State.players[0].score += score.total;
   addLog('Your round score: +' + score.total + ' pts (' + score.details.join(', ') + ')');
 
-  // AI scoring (simplified: random 5-15 pts each)
+  // AI scoring using their actual gardens
   for (var i = 1; i < State.players.length; i++) {
-    var aiPts = Math.floor(Math.random() * 11) + 5;
-    State.players[i].score += aiPts;
-    addLog(State.players[i].name + ': +' + aiPts + ' pts');
+    if (State.players[i].aiGarden) {
+      var aiScore = scoreEndOfRound(State.players[i].aiGarden);
+      State.players[i].score += aiScore.total;
+      addLog(State.players[i].name + ': +' + aiScore.total + ' pts');
+    }
   }
 
   // Track wheel history
@@ -1706,11 +1958,15 @@ function endRound() {
     State.players[0].score += leftover;
     if (leftover < 0) addLog('Leftover penalty: ' + leftover + ' pts');
 
-    // AI final scoring
+    // AI final scoring using actual gardens
     for (var k = 1; k < State.players.length; k++) {
-      var aiFinal = Math.floor(Math.random() * 15) + 5;
-      State.players[k].score += aiFinal;
-      State.players[k].score -= Math.floor(Math.random() * 5);
+      if (State.players[k].aiGarden) {
+        var aiFinal2 = scoreFinalGroups(State.players[k].aiGarden);
+        State.players[k].score += aiFinal2.total;
+        var aiLeftover = scoreLeftovers(State.players[k].aiStorage || [], State.players[k].aiExpStorage || []);
+        State.players[k].score += aiLeftover;
+        addLog(State.players[k].name + ': groups +' + aiFinal2.total + ', leftovers ' + aiLeftover);
+      }
     }
 
     // Determine winner
@@ -1786,6 +2042,33 @@ document.getElementById('acquireValue').addEventListener('change', function() {
   document.getElementById('acquirePreview').textContent =
     '→ ' + matches.tiles.length + ' tile(s), ' + matches.expansions.length + ' expansion(s)';
 });
+
+// Garden view state
+var viewingGarden = 0; // 0 = player, 1-3 = AI
+
+function switchGardenView(idx) {
+  viewingGarden = idx;
+  // Update tab styles
+  var tabs = ['tabYou', 'tabAI1', 'tabAI2', 'tabAI3'];
+  for (var i = 0; i < tabs.length; i++) {
+    var tab = document.getElementById(tabs[i]);
+    if (i === idx) {
+      tab.style.background = 'var(--accent)';
+      tab.style.color = 'white';
+    } else {
+      tab.style.background = 'var(--surface)';
+      tab.style.color = 'var(--text)';
+    }
+  }
+  var title = document.getElementById('gardenTitle');
+  title.textContent = idx === 0 ? 'Your Garden' : State.players[idx].name + "'s Garden";
+  renderGarden();
+}
+
+document.getElementById('tabYou').addEventListener('click', function() { switchGardenView(0); });
+document.getElementById('tabAI1').addEventListener('click', function() { switchGardenView(1); });
+document.getElementById('tabAI2').addEventListener('click', function() { switchGardenView(2); });
+document.getElementById('tabAI3').addEventListener('click', function() { switchGardenView(3); });
 
 // === INIT ===
 initGame();
