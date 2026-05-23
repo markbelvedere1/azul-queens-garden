@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Azul: Queen's Garden</title>
+<style>
+:root {
+  --bg: #F5F0E8;
+  --surface: #FFFFFF;
+  --borders: #D4C9B8;
+  --text: #2C2416;
+  --text-muted: #7A6E5D;
+  --accent: #1B6B4A;
+  --danger: #C0392B;
+  --success: #27AE60;
+  --warning: #E67E22;
+  --lavender: #B39DDB;
+  --purple: #7B1FA2;
+  --light-green: #81C784;
+  --dark-green: #2E7D32;
+  --light-blue: #64B5F6;
+  --yellow: #FFD54F;
+  --joker: #9E9E9E;
+  --hex-size: 28;
+  --hex-gap: 2;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+header {
+  background: var(--accent);
+  color: white;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+header h1 { font-size: 1.2rem; font-weight: 600; }
+.phase-tag {
+  font-size: 0.75rem;
+  background: rgba(255,255,255,0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+main {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+  padding: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.garden-area {
+  background: var(--surface);
+  border: 1px solid var(--borders);
+  border-radius: 8px;
+  padding: 16px;
+  min-height: 500px;
+  position: relative;
+  overflow: auto;
+}
+.garden-area h2 { font-size: 1rem; margin-bottom: 12px; color: var(--accent); }
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--borders);
+  border-radius: 8px;
+  padding: 12px;
+}
+.panel h3 {
+  font-size: 0.85rem;
+  color: var(--accent);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+/* SVG hex grid */
+.garden-svg { display: block; }
+.hex-cell {
+  stroke: var(--borders);
+  stroke-width: 1;
+  fill: var(--surface);
+  cursor: pointer;
+  transition: fill 0.15s;
+}
+.hex-cell:hover { fill: #f0ebe3; }
+.hex-cell.occupied { cursor: default; }
+.hex-cell.valid-target {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 4 2;
+  fill: #e8f5e9;
+}
+.hex-cell.fountain { fill: #e3f2fd; stroke: var(--light-blue); }
+.hex-tile-bg { pointer-events: none; }
+.hex-pattern { pointer-events: none; font-size: 11px; fill: white; text-anchor: middle; dominant-baseline: central; font-weight: bold; }
+/* Storage board */
+.storage-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+.storage-slot {
+  aspect-ratio: 1;
+  border: 1.5px dashed var(--borders);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  min-height: 36px;
+}
+.storage-slot:hover { border-color: var(--accent); }
+.storage-slot.has-tile { border-style: solid; cursor: grab; }
+.storage-slot.selected { border-color: var(--accent); border-width: 2px; box-shadow: 0 0 0 2px rgba(27,107,74,0.3); }
+.tile-pip {
+  width: 80%;
+  height: 80%;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  color: white;
+}
+/* Expansion slots */
+.expansion-slots {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.expansion-slot {
+  flex: 1;
+  height: 48px;
+  border: 1.5px dashed var(--borders);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+/* Scoreboard */
+.scores { display: flex; flex-direction: column; gap: 4px; }
+.score-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.score-row.active { background: #e8f5e9; font-weight: 600; }
+.score-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.score-name { flex: 1; }
+.score-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Action bar */
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.actions button {
+  padding: 8px 16px;
+  border: 1px solid var(--borders);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.15s;
+}
+.actions button:hover { border-color: var(--accent); color: var(--accent); }
+.actions button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+.actions button.primary:hover { background: #15573c; }
+.actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Game log */
+.log-entries {
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.log-entry { padding: 1px 0; border-bottom: 1px solid #f0ebe3; }
+/* Tile reference */
+.tile-ref {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  font-size: 0.7rem;
+}
+.tile-ref-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tile-ref-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+/* Info tooltip */
+.info-bar {
+  padding: 8px 12px;
+  background: #fffde7;
+  border: 1px solid #fff9c4;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>🌺 Azul: Queen's Garden</h1>
+  <span class="phase-tag">Phase 1 — Hex Grid + Data Model</span>
+</header>
+<main>
+  <div class="garden-area" id="gardenArea">
+    <h2>Your Garden</h2>
+    <div id="gardenContainer"></div>
+  </div>
+  <div class="sidebar">
+    <div class="panel">
+      <h3>Scores — Round <span id="roundNum">1</span>/4</h3>
+      <div class="scores" id="scoreBoard"></div>
+    </div>
+    <div class="panel">
+      <h3>Storage Board (<span id="storageCount">3</span>/12)</h3>
+      <div class="storage-grid" id="storageGrid"></div>
+      <div class="expansion-slots">
+        <div class="expansion-slot" id="expSlot0">Expansion 1</div>
+        <div class="expansion-slot" id="expSlot1">Expansion 2</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Actions</h3>
+      <div id="infoBar" class="info-bar">Select a tile from storage, then click a valid hex to place it.</div>
+      <div class="actions" style="margin-top:8px">
+        <button id="btnPlace" class="primary" disabled>Place Tile</button>
+        <button id="btnPass">Pass</button>
+        <button id="btnNewGame">New Game</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Tile Reference</h3>
+      <div class="tile-ref" id="tileRef"></div>
+    </div>
+    <div class="panel">
+      <h3>Game Log</h3>
+      <div class="log-entries" id="gameLog"></div>
+    </div>
+  </div>
+</main>
+<script>
+/* ============================================================
+   AZUL: QUEEN'S GARDEN — Phase 1: Core hex grid + data model
+   ============================================================ */
+
+// === CONSTANTS ===
+const COLORS = [
+  { name: 'Lavender', hex: '#B39DDB', id: 'lavender' },
+  { name: 'Purple',   hex: '#7B1FA2', id: 'purple' },
+  { name: 'L.Green',  hex: '#81C784', id: 'light-green' },
+  { name: 'D.Green',  hex: '#2E7D32', id: 'dark-green' },
+  { name: 'L.Blue',   hex: '#64B5F6', id: 'light-blue' },
+  { name: 'Yellow',   hex: '#FFD54F', id: 'yellow' }
+];
+
+const PATTERNS = [
+  { name: 'Tree',      cost: 1, icon: '🌲', id: 'tree' },
+  { name: 'Bird',      cost: 2, icon: '🐦', id: 'bird' },
+  { name: 'Butterfly', cost: 3, icon: '🦋', id: 'butterfly' },
+  { name: 'Flower',    cost: 4, icon: '🌸', id: 'flower' },
+  { name: 'Grass',     cost: 5, icon: '🌿', id: 'grass' },
+  { name: 'Tulip',     cost: 6, icon: '🌷', id: 'tulip' }
+];
+
+const HEX_SIZE = 28;
+const SQRT3 = Math.sqrt(3);
+
+// === TILE FACTORY ===
+function createAllTiles() {
+  const tiles = [];
+  let id = 0;
+  for (const color of COLORS) {
+    for (const pattern of PATTERNS) {
+      for (let copy = 0; copy < 3; copy++) {
+        tiles.push({
+          id: id++,
+          color: color.id,
+          colorName: color.name,
+          colorHex: color.hex,
+          pattern: pattern.id,
+          patternName: pattern.name,
+          patternIcon: pattern.icon,
+          cost: pattern.cost
+        });
+      }
+    }
+  }
+  return tiles;
+}
+
+function createJokers() {
+  const jokers = [];
+  for (let i = 0; i < 24; i++) {
+    jokers.push({
+      id: 1000 + i,
+      color: 'joker',
+      colorName: 'Joker',
+      colorHex: '#9E9E9E',
+      pattern: 'joker',
+      patternName: 'Joker',
+      patternIcon: '★',
+      cost: 0,
+      isJoker: true
+    });
+  }
+  return jokers;
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// === HEX GRID MATH (axial coordinates) ===
+// Pointy-top hexagons
+function hexToPixel(q, r, size) {
+  const x = size * (SQRT3 * q + SQRT3 / 2 * r);
+  const y = size * (3 / 2 * r);
+  return { x, y };
+}
+
+function hexCorners(cx, cy, size) {
+  const corners = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 180 * (60 * i - 30);
+    corners.push({
+      x: cx + size * Math.cos(angle),
+      y: cy + size * Math.sin(angle)
+    });
+  }
+  return corners;
+}
+
+function hexPoints(cx, cy, size) {
+  return hexCorners(cx, cy, size).map(c => c.x + ',' + c.y).join(' ');
+}
+
+// Axial neighbors
+const HEX_DIRS = [
+  { q: 1, r: 0 }, { q: 1, r: -1 }, { q: 0, r: -1 },
+  { q: -1, r: 0 }, { q: -1, r: 1 }, { q: 0, r: 1 }
+];
+
+function hexNeighbors(q, r) {
+  return HEX_DIRS.map(d => ({ q: q + d.q, r: r + d.r }));
+}
+
+function hexKey(q, r) { return q + ',' + r; }
+
+// === FOUNTAIN BOARD (starting 13-hex piece) ===
+// Center hex + 2 rings. We use a hex shape of radius 1 around center
+// then add a partial second ring to make ~13 hexes
+function createFountainLayout() {
+  const cells = [];
+  // Ring 0 (center)
+  cells.push({ q: 0, r: 0, feature: 'fountain' });
+  // Ring 1 (6 cells)
+  for (const d of HEX_DIRS) {
+    cells.push({ q: d.q, r: d.r, feature: null });
+  }
+  // Ring 2 partial (6 more to make 13 total)
+  const ring2 = [
+    { q: 2, r: -1 }, { q: 1, r: 1 }, { q: -1, r: 2 },
+    { q: -2, r: 1 }, { q: -1, r: -1 }, { q: 1, r: -2 }
+  ];
+  for (const c of ring2) {
+    cells.push({ q: c.q, r: c.r, feature: null });
+  }
+  return cells;
+}
+
+// === GAME STATE ===
+const State = {
+  players: [],
+  currentPlayer: 0,
+  round: 1,
+  bag: [],
+  allTiles: [],
+  jokerPool: [],
+  selectedStorageTile: null,
+  selectedHex: null,
+  garden: new Map(), // hexKey -> { q, r, tile, feature }
+  gardenCells: [],   // all valid hex positions
+  storage: [],       // tiles in player storage (max 12)
+  expansionStorage: [], // expansions (max 2)
+  log: []
+};
+
+function initGame() {
+  State.allTiles = createAllTiles();
+  State.jokerPool = createJokers();
+  State.bag = shuffle([...State.allTiles]);
+  State.round = 1;
+  State.currentPlayer = 0;
+  State.selectedStorageTile = null;
+  State.selectedHex = null;
+  State.log = [];
+
+  // Players
+  State.players = [
+    { name: 'You',        score: 15, color: '#2C2416', isHuman: true },
+    { name: 'AI-Greedy',  score: 15, color: '#C62828', isHuman: false },
+    { name: 'AI-Builder', score: 15, color: '#1565C0', isHuman: false },
+    { name: 'AI-Balance', score: 15, color: '#6A1B9A', isHuman: false }
+  ];
+
+  // Initialize fountain board
+  State.gardenCells = createFountainLayout();
+  State.garden = new Map();
+  for (const cell of State.gardenCells) {
+    State.garden.set(hexKey(cell.q, cell.r), {
+      q: cell.q, r: cell.r,
+      tile: null,
+      feature: cell.feature
+    });
+  }
+
+  // Give player 3 jokers to start
+  State.storage = [];
+  for (let i = 0; i < 3; i++) {
+    if (State.jokerPool.length) {
+      State.storage.push(State.jokerPool.shift());
+    }
+  }
+  State.expansionStorage = [];
+
+  // Add some sample tiles to storage for testing placement
+  for (let i = 0; i < 5; i++) {
+    if (State.bag.length) State.storage.push(State.bag.pop());
+  }
+
+  addLog('Game started! Round 1 of 4.');
+  addLog('You have 3 Jokers + 5 tiles to test placement.');
+  renderAll();
+}
+
+// === ADJACENCY VALIDATION ===
+function canPlaceTile(q, r, tile) {
+  const cell = State.garden.get(hexKey(q, r));
+  if (!cell) return false;
+  if (cell.tile) return false; // already occupied
+
+  const neighbors = hexNeighbors(q, r);
+  let hasAdjacentTile = false;
+
+  for (const n of neighbors) {
+    const nCell = State.garden.get(hexKey(n.q, n.r));
+    if (!nCell || !nCell.tile) continue;
+    hasAdjacentTile = true;
+    const nt = nCell.tile;
+
+    // Cannot place identical tile adjacent
+    if (nt.color === tile.color && nt.pattern === tile.pattern) return false;
+
+    // Must share color OR pattern (jokers are wild — always OK)
+    if (tile.isJoker || nt.tile?.isJoker) continue;
+    if (nt.color !== tile.color && nt.pattern !== tile.pattern) return false;
+  }
+
+  // If garden has any tiles, must be adjacent to at least one
+  // (unless this is the first tile placed)
+  let gardenHasTiles = false;
+  for (const [, c] of State.garden) {
+    if (c.tile) { gardenHasTiles = true; break; }
+  }
+  if (gardenHasTiles && !hasAdjacentTile) return false;
+
+  return true;
+}
+
+function getValidPlacements(tile) {
+  const valid = [];
+  for (const [key, cell] of State.garden) {
+    if (canPlaceTile(cell.q, cell.r, tile)) {
+      valid.push({ q: cell.q, r: cell.r, key });
+    }
+  }
+  return valid;
+}
+
+// === PLACE TILE ===
+function placeTile(q, r, tileIndex) {
+  const tile = State.storage[tileIndex];
+  if (!tile) return false;
+  if (!canPlaceTile(q, r, tile)) return false;
+
+  const cell = State.garden.get(hexKey(q, r));
+  cell.tile = tile;
+  State.storage.splice(tileIndex, 1);
+
+  // Check if any feature is now fully surrounded
+  checkFeatureSurrounded(q, r);
+
+  addLog('Placed ' + tile.patternIcon + ' ' + tile.colorName + ' ' + tile.patternName + ' at (' + q + ',' + r + ')');
+  State.selectedStorageTile = null;
+  State.selectedHex = null;
+  renderAll();
+  return true;
+}
+
+function checkFeatureSurrounded(pq, pr) {
+  // Check all neighbors — if any have a feature, see if that feature is fully surrounded
+  const toCheck = [{ q: pq, r: pr }, ...hexNeighbors(pq, pr)];
+  for (const pos of toCheck) {
+    const cell = State.garden.get(hexKey(pos.q, pos.r));
+    if (!cell || !cell.feature) continue;
+
+    const nbrs = hexNeighbors(pos.q, pos.r);
+    let allFilled = true;
+    let validNeighborCount = 0;
+    for (const n of nbrs) {
+      const nc = State.garden.get(hexKey(n.q, n.r));
+      if (!nc) continue; // edge of garden, not a valid space
+      validNeighborCount++;
+      if (!nc.tile) { allFilled = false; break; }
+    }
+    if (allFilled && validNeighborCount > 0) {
+      // Award joker
+      if (State.jokerPool.length > 0 && State.storage.length < 12) {
+        const j = State.jokerPool.shift();
+        State.storage.push(j);
+        addLog('🎉 Surrounded ' + cell.feature + '! Gained a Joker.');
+      }
+    }
+  }
+}
+
+// === LOGGING ===
+function addLog(msg) {
+  State.log.unshift(msg);
+  if (State.log.length > 50) State.log.pop();
+}
+
+// === RENDERING ===
+function renderAll() {
+  renderGarden();
+  renderStorage();
+  renderScoreBoard();
+  renderLog();
+  renderTileRef();
+  updateInfoBar();
+  updateButtons();
+}
+
+function renderGarden() {
+  const container = document.getElementById('gardenContainer');
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  // Calculate bounds
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [, cell] of State.garden) {
+    const { x, y } = hexToPixel(cell.q, cell.r, HEX_SIZE);
+    minX = Math.min(minX, x - HEX_SIZE);
+    maxX = Math.max(maxX, x + HEX_SIZE);
+    minY = Math.min(minY, y - HEX_SIZE);
+    maxY = Math.max(maxY, y + HEX_SIZE);
+  }
+
+  const pad = 10;
+  const w = maxX - minX + pad * 2;
+  const h = maxY - minY + pad * 2;
+  const offX = -minX + pad;
+  const offY = -minY + pad;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', w);
+  svg.setAttribute('height', h);
+  svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+  svg.classList.add('garden-svg');
+
+  for (const [key, cell] of State.garden) {
+    const { x, y } = hexToPixel(cell.q, cell.r, HEX_SIZE);
+    const cx = x + offX;
+    const cy = y + offY;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+    // Hex polygon
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', hexPoints(cx, cy, HEX_SIZE - 1));
+    poly.classList.add('hex-cell');
+
+    if (cell.tile) {
+      poly.classList.add('occupied');
+      poly.style.fill = cell.tile.colorHex;
+      poly.style.stroke = '#fff';
+      poly.style.strokeWidth = '2';
+    } else if (cell.feature) {
+      poly.classList.add('fountain');
+    }
+
+    // Highlight valid placement targets
+    if (State.selectedStorageTile !== null) {
+      const tile = State.storage[State.selectedStorageTile];
+      if (tile && !cell.tile && canPlaceTile(cell.q, cell.r, tile)) {
+        poly.classList.add('valid-target');
+      }
+    }
+
+    // Click to select hex for placement
+    poly.addEventListener('click', function() {
+      handleHexClick(cell.q, cell.r);
+    });
+
+    g.appendChild(poly);
+
+    // Tile pattern icon
+    if (cell.tile) {
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('x', cx);
+      txt.setAttribute('y', cy);
+      txt.classList.add('hex-pattern');
+      txt.textContent = cell.tile.patternIcon;
+      g.appendChild(txt);
+    }
+
+    // Feature icon
+    if (cell.feature && !cell.tile) {
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('x', cx);
+      txt.setAttribute('y', cy);
+      txt.classList.add('hex-pattern');
+      txt.style.fill = '#64B5F6';
+      txt.style.fontSize = '14px';
+      txt.textContent = cell.feature === 'fountain' ? '⛲' : '🏛️';
+      g.appendChild(txt);
+    }
+
+    // Coordinate label (debug)
+    const coordTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    coordTxt.setAttribute('x', cx);
+    coordTxt.setAttribute('y', cy + HEX_SIZE * 0.7);
+    coordTxt.style.fontSize = '7px';
+    coordTxt.style.fill = '#bbb';
+    coordTxt.style.textAnchor = 'middle';
+    coordTxt.textContent = cell.q + ',' + cell.r;
+    g.appendChild(coordTxt);
+
+    svg.appendChild(g);
+  }
+
+  container.appendChild(svg);
+}
+
+function renderStorage() {
+  const grid = document.getElementById('storageGrid');
+  while (grid.firstChild) grid.removeChild(grid.firstChild);
+
+  for (let i = 0; i < 12; i++) {
+    const slot = document.createElement('div');
+    slot.classList.add('storage-slot');
+
+    if (i < State.storage.length) {
+      const tile = State.storage[i];
+      slot.classList.add('has-tile');
+      if (State.selectedStorageTile === i) slot.classList.add('selected');
+
+      const pip = document.createElement('div');
+      pip.classList.add('tile-pip');
+      pip.style.background = tile.colorHex;
+      pip.textContent = tile.patternIcon;
+      slot.appendChild(pip);
+
+      const idx = i;
+      slot.addEventListener('click', function() { handleStorageClick(idx); });
+    }
+
+    grid.appendChild(slot);
+  }
+
+  document.getElementById('storageCount').textContent = State.storage.length;
+}
+
+function renderScoreBoard() {
+  const board = document.getElementById('scoreBoard');
+  while (board.firstChild) board.removeChild(board.firstChild);
+
+  State.players.forEach(function(p, i) {
+    const row = document.createElement('div');
+    row.classList.add('score-row');
+    if (i === State.currentPlayer) row.classList.add('active');
+
+    const dot = document.createElement('span');
+    dot.classList.add('score-dot');
+    dot.style.background = p.color;
+    row.appendChild(dot);
+
+    const name = document.createElement('span');
+    name.classList.add('score-name');
+    name.textContent = p.name;
+    row.appendChild(name);
+
+    const val = document.createElement('span');
+    val.classList.add('score-val');
+    val.textContent = p.score;
+    row.appendChild(val);
+
+    board.appendChild(row);
+  });
+
+  document.getElementById('roundNum').textContent = State.round;
+}
+
+function renderLog() {
+  const logEl = document.getElementById('gameLog');
+  while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
+
+  for (const msg of State.log) {
+    const entry = document.createElement('div');
+    entry.classList.add('log-entry');
+    entry.textContent = msg;
+    logEl.appendChild(entry);
+  }
+}
+
+function renderTileRef() {
+  const ref = document.getElementById('tileRef');
+  while (ref.firstChild) ref.removeChild(ref.firstChild);
+
+  // Colors
+  for (const c of COLORS) {
+    const item = document.createElement('div');
+    item.classList.add('tile-ref-item');
+    const swatch = document.createElement('span');
+    swatch.classList.add('tile-ref-swatch');
+    swatch.style.background = c.hex;
+    item.appendChild(swatch);
+    const label = document.createElement('span');
+    label.textContent = c.name;
+    item.appendChild(label);
+    ref.appendChild(item);
+  }
+
+  // Patterns
+  for (const p of PATTERNS) {
+    const item = document.createElement('div');
+    item.classList.add('tile-ref-item');
+    const icon = document.createElement('span');
+    icon.textContent = p.icon;
+    item.appendChild(icon);
+    const label = document.createElement('span');
+    label.textContent = p.name + ' ($' + p.cost + ')';
+    item.appendChild(label);
+    ref.appendChild(item);
+  }
+}
+
+function updateInfoBar() {
+  const bar = document.getElementById('infoBar');
+  if (State.selectedStorageTile !== null) {
+    const tile = State.storage[State.selectedStorageTile];
+    const validCount = getValidPlacements(tile).length;
+    bar.textContent = 'Selected: ' + tile.patternIcon + ' ' + tile.colorName + ' ' + tile.patternName +
+      ' (cost ' + tile.cost + '). ' + validCount + ' valid placement(s). Click a green hex to place.';
+  } else {
+    bar.textContent = 'Select a tile from storage, then click a valid hex to place it.';
+  }
+}
+
+function updateButtons() {
+  document.getElementById('btnPlace').disabled = State.selectedStorageTile === null;
+}
+
+// === EVENT HANDLERS ===
+function handleStorageClick(index) {
+  if (State.selectedStorageTile === index) {
+    State.selectedStorageTile = null; // deselect
+  } else {
+    State.selectedStorageTile = index;
+  }
+  State.selectedHex = null;
+  renderAll();
+}
+
+function handleHexClick(q, r) {
+  if (State.selectedStorageTile === null) return;
+  const tile = State.storage[State.selectedStorageTile];
+  if (!tile) return;
+
+  if (canPlaceTile(q, r, tile)) {
+    placeTile(q, r, State.selectedStorageTile);
+  }
+}
+
+// Button handlers
+document.getElementById('btnNewGame').addEventListener('click', function() {
+  initGame();
+});
+
+document.getElementById('btnPass').addEventListener('click', function() {
+  addLog('You passed.');
+  renderAll();
+});
+
+document.getElementById('btnPlace').addEventListener('click', function() {
+  if (State.selectedStorageTile !== null) {
+    const tile = State.storage[State.selectedStorageTile];
+    const placements = getValidPlacements(tile);
+    if (placements.length > 0) {
+      updateInfoBar();
+    }
+  }
+});
+
+// === START ===
+initGame();
+</script>
+</body>
+</html>
