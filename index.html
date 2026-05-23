@@ -220,12 +220,58 @@ main {
 .turn-indicator.waiting { background: #fff3e0; }
 /* Bag counter */
 .bag-counter { font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 4px; }
+/* Animations */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+@keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+.log-entry { animation: slideIn 0.2s ease; }
+.exp-stack-item { animation: fadeIn 0.3s ease; }
+.score-row.active { animation: pulse 0.5s ease; }
+.hex-cell { transition: fill 0.2s, stroke 0.2s, transform 0.1s; }
+.storage-slot { transition: all 0.2s ease; }
+.storage-slot.selected { transform: scale(1.08); }
+/* Game over overlay */
+.game-over {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center;
+  z-index: 100; animation: fadeIn 0.5s ease;
+}
+.game-over-card {
+  background: var(--surface); border-radius: 12px; padding: 32px 40px;
+  text-align: center; max-width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+.game-over-card h2 { color: var(--accent); margin-bottom: 12px; font-size: 1.4rem; }
+.game-over-card .trophy { font-size: 3rem; margin-bottom: 8px; }
+.game-over-card .final-scores { text-align: left; margin: 16px 0; font-size: 0.9rem; }
+.game-over-card .final-scores div { padding: 4px 0; display: flex; justify-content: space-between; }
+.game-over-card .winner { color: var(--accent); font-weight: 700; }
+.game-over-card button {
+  margin-top: 16px; padding: 10px 24px; background: var(--accent);
+  color: white; border: none; border-radius: 8px; font-size: 1rem;
+  cursor: pointer;
+}
+.game-over-card button:hover { background: #15573c; }
+/* Responsive */
+@media (max-width: 900px) {
+  main { grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
+  .display-area { grid-column: 1; }
+  .garden-area { min-height: 300px; }
+  .display-row { flex-wrap: wrap; }
+  .exp-stack-item { width: 150px; }
+}
+@media (max-width: 600px) {
+  header h1 { font-size: 1rem; }
+  .storage-grid { grid-template-columns: repeat(4, 1fr); }
+  .exp-stack-item { width: 130px; }
+  .acquire-bar { flex-direction: column; align-items: stretch; }
+  .acquire-bar select, .acquire-bar button { width: 100%; }
+}
 </style>
 </head>
 <body>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">Phase 5 — AI Opponents</span>
+  <span class="phase-tag">v1.0 — Complete</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -1336,6 +1382,16 @@ function renderGarden() {
     poly.setAttribute('points', hexPoints(cx, cy, HEX_SIZE - 1));
     poly.classList.add('hex-cell');
 
+// SVG pattern icons for better rendering
+var SVG_PATTERNS = {
+  tree: function(cx, cy) { return 'M' + cx + ',' + (cy-8) + ' L' + (cx-5) + ',' + (cy+2) + ' L' + (cx-2) + ',' + (cy+2) + ' L' + (cx-2) + ',' + (cy+6) + ' L' + (cx+2) + ',' + (cy+6) + ' L' + (cx+2) + ',' + (cy+2) + ' L' + (cx+5) + ',' + (cy+2) + ' Z'; },
+  bird: function(cx, cy) { return 'M' + (cx-6) + ',' + (cy+2) + ' Q' + (cx-3) + ',' + (cy-5) + ' ' + cx + ',' + (cy-2) + ' Q' + (cx+3) + ',' + (cy-5) + ' ' + (cx+6) + ',' + (cy+2); },
+  butterfly: function(cx, cy) { return 'M' + cx + ',' + (cy-6) + ' Q' + (cx-6) + ',' + (cy-3) + ' ' + (cx-5) + ',' + cy + ' Q' + (cx-6) + ',' + (cy+3) + ' ' + cx + ',' + (cy+6) + ' Q' + (cx+6) + ',' + (cy+3) + ' ' + (cx+5) + ',' + cy + ' Q' + (cx+6) + ',' + (cy-3) + ' ' + cx + ',' + (cy-6); },
+  flower: function(cx, cy) { var d = ''; for (var i = 0; i < 5; i++) { var a = (i * 72 - 90) * Math.PI / 180; d += (i ? 'L' : 'M') + (cx + 6 * Math.cos(a)) + ',' + (cy + 6 * Math.sin(a)); } return d + 'Z'; },
+  grass: function(cx, cy) { return 'M' + (cx-4) + ',' + (cy+5) + ' L' + (cx-3) + ',' + (cy-5) + ' M' + cx + ',' + (cy+5) + ' L' + cx + ',' + (cy-7) + ' M' + (cx+4) + ',' + (cy+5) + ' L' + (cx+3) + ',' + (cy-5); },
+  tulip: function(cx, cy) { return 'M' + cx + ',' + (cy-7) + ' Q' + (cx-6) + ',' + (cy-2) + ' ' + (cx-4) + ',' + (cy+1) + ' L' + cx + ',' + (cy-1) + ' L' + (cx+4) + ',' + (cy+1) + ' Q' + (cx+6) + ',' + (cy-2) + ' ' + cx + ',' + (cy-7) + ' M' + cx + ',' + (cy-1) + ' L' + cx + ',' + (cy+7); }
+};
+
     if (cell.tile) {
       poly.classList.add('occupied');
       poly.style.fill = cell.tile.colorHex;
@@ -1359,12 +1415,24 @@ function renderGarden() {
     g.appendChild(poly);
 
     if (cell.tile) {
-      var txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      txt.setAttribute('x', cx);
-      txt.setAttribute('y', cy);
-      txt.classList.add('hex-pattern');
-      txt.textContent = cell.tile.patternIcon;
-      g.appendChild(txt);
+      var patternDef = SVG_PATTERNS[cell.tile.pattern];
+      if (patternDef && !cell.tile.isJoker) {
+        var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', patternDef(cx, cy));
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', 'rgba(255,255,255,0.85)');
+        path.setAttribute('stroke-width', '1.5');
+        path.setAttribute('stroke-linecap', 'round');
+        path.style.pointerEvents = 'none';
+        g.appendChild(path);
+      } else {
+        var txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        txt.setAttribute('x', cx);
+        txt.setAttribute('y', cy);
+        txt.classList.add('hex-pattern');
+        txt.textContent = cell.tile.patternIcon;
+        g.appendChild(txt);
+      }
     }
 
     if (cell.feature && !cell.tile) {
@@ -1977,6 +2045,7 @@ function endRound() {
     addLog('🏆 Winner: ' + winner.name + ' with ' + winner.score + ' points!');
 
     renderAll();
+    showGameOver(winner);
     return;
   }
 
@@ -2042,6 +2111,66 @@ document.getElementById('acquireValue').addEventListener('change', function() {
   document.getElementById('acquirePreview').textContent =
     '→ ' + matches.tiles.length + ' tile(s), ' + matches.expansions.length + ' expansion(s)';
 });
+
+// === GAME OVER OVERLAY ===
+function showGameOver(winner) {
+  // Remove any existing overlay
+  var existing = document.querySelector('.game-over');
+  if (existing) existing.parentNode.removeChild(existing);
+
+  var overlay = document.createElement('div');
+  overlay.classList.add('game-over');
+
+  var card = document.createElement('div');
+  card.classList.add('game-over-card');
+
+  var trophy = document.createElement('div');
+  trophy.classList.add('trophy');
+  trophy.textContent = '🏆';
+  card.appendChild(trophy);
+
+  var title = document.createElement('h2');
+  title.textContent = winner.isHuman ? 'You Win!' : winner.name + ' Wins!';
+  card.appendChild(title);
+
+  var scoresDiv = document.createElement('div');
+  scoresDiv.classList.add('final-scores');
+
+  // Sort players by score
+  var sorted = State.players.slice().sort(function(a, b) { return b.score - a.score; });
+  for (var i = 0; i < sorted.length; i++) {
+    var row = document.createElement('div');
+    if (sorted[i] === winner) row.classList.add('winner');
+
+    var nameSpan = document.createElement('span');
+    nameSpan.textContent = (i + 1) + '. ' + sorted[i].name;
+    row.appendChild(nameSpan);
+
+    var scoreSpan = document.createElement('span');
+    scoreSpan.textContent = sorted[i].score + ' pts';
+    row.appendChild(scoreSpan);
+
+    scoresDiv.appendChild(row);
+  }
+  card.appendChild(scoresDiv);
+
+  var btn = document.createElement('button');
+  btn.textContent = 'New Game';
+  btn.addEventListener('click', function() {
+    overlay.parentNode.removeChild(overlay);
+    initGame();
+  });
+  card.appendChild(btn);
+
+  overlay.appendChild(card);
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) {
+      overlay.parentNode.removeChild(overlay);
+    }
+  });
+
+  document.body.appendChild(overlay);
+}
 
 // Garden view state
 var viewingGarden = 0; // 0 = player, 1-3 = AI
