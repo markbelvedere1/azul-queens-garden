@@ -1724,14 +1724,17 @@ function renderStorage() {
   // Expansion slots
   for (var e = 0; e < 2; e++) {
     var eSlot = document.getElementById('expSlot' + e);
-    while (eSlot.firstChild) eSlot.removeChild(eSlot.firstChild);
-    eSlot.className = 'expansion-slot';
+    // Clone to remove stale event listeners
+    var freshSlot = eSlot.cloneNode(false);
+    eSlot.parentNode.replaceChild(freshSlot, eSlot);
+    freshSlot.className = 'expansion-slot';
     if (e < State.expansionStorage.length) {
       var exp = State.expansionStorage[e];
-      eSlot.classList.add('has-exp');
-      eSlot.textContent = exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName;
+      freshSlot.classList.add('has-exp');
+      freshSlot.textContent = exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName;
+      freshSlot.id = 'expSlot' + e;
       (function(slotIdx) {
-        eSlot.addEventListener('click', function() {
+        freshSlot.addEventListener('click', function() {
           if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
           if (State.placingExpansion) {
             cancelExpansionPlacement();
@@ -1741,7 +1744,8 @@ function renderStorage() {
         });
       })(e);
     } else {
-      eSlot.textContent = 'Empty';
+      freshSlot.textContent = 'Empty';
+      freshSlot.id = 'expSlot' + e;
     }
   }
 }
