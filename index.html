@@ -23,7 +23,6 @@
   --yellow: #FFD54F;
   --joker: #9E9E9E;
   --hex-size: 28;
-  --hex-gap: 2;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -35,243 +34,259 @@ body {
 header {
   background: var(--accent);
   color: white;
-  padding: 12px 24px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-header h1 { font-size: 1.2rem; font-weight: 600; }
+header h1 { font-size: 1.15rem; font-weight: 600; }
 .phase-tag {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   background: rgba(255,255,255,0.2);
   padding: 2px 8px;
   border-radius: 4px;
 }
 main {
   display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 16px;
-  padding: 16px;
+  grid-template-columns: 1fr 280px;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 12px;
   max-width: 1400px;
   margin: 0 auto;
 }
-.garden-area {
-  background: var(--surface);
-  border: 1px solid var(--borders);
-  border-radius: 8px;
-  padding: 16px;
-  min-height: 500px;
-  position: relative;
-  overflow: auto;
-}
-.garden-area h2 { font-size: 1rem; margin-bottom: 12px; color: var(--accent); }
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.panel {
+/* Display Area (top spanning full width) */
+.display-area {
+  grid-column: 1 / -1;
   background: var(--surface);
   border: 1px solid var(--borders);
   border-radius: 8px;
   padding: 12px;
 }
-.panel h3 {
-  font-size: 0.85rem;
+.display-area h2 { font-size: 0.9rem; margin-bottom: 8px; color: var(--accent); }
+.display-row {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  align-items: flex-start;
+}
+/* Expansion stack item */
+.exp-stack-item {
+  flex-shrink: 0;
+  width: 180px;
+  border: 1.5px solid var(--borders);
+  border-radius: 8px;
+  padding: 8px;
+  background: #fafaf5;
+  position: relative;
+}
+.exp-stack-item.face-up { border-color: var(--accent); background: #f0f9f4; }
+.exp-stack-item .exp-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.exp-stack-item .exp-combo {
+  font-size: 0.7rem;
   color: var(--accent);
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  margin-bottom: 4px;
 }
-/* SVG hex grid */
-.garden-svg { display: block; }
-.hex-cell {
-  stroke: var(--borders);
-  stroke-width: 1;
-  fill: var(--surface);
-  cursor: pointer;
-  transition: fill 0.15s;
+.exp-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
 }
-.hex-cell:hover { fill: #f0ebe3; }
-.hex-cell.occupied { cursor: default; }
-.hex-cell.valid-target {
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-dasharray: 4 2;
-  fill: #e8f5e9;
-}
-.hex-cell.fountain { fill: #e3f2fd; stroke: var(--light-blue); }
-.hex-tile-bg { pointer-events: none; }
-.hex-pattern { pointer-events: none; font-size: 11px; fill: white; text-anchor: middle; dominant-baseline: central; font-weight: bold; }
-/* Storage board */
-.storage-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 4px;
-}
-.storage-slot {
-  aspect-ratio: 1;
-  border: 1.5px dashed var(--borders);
-  border-radius: 6px;
+.exp-tile-pip {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 11px;
+  color: white;
+  font-weight: bold;
   cursor: pointer;
-  transition: all 0.15s;
-  position: relative;
-  min-height: 36px;
+  border: 1px solid rgba(0,0,0,0.15);
+}
+/* Acquire declaration */
+.acquire-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--borders);
+}
+.acquire-bar label { font-size: 0.8rem; font-weight: 600; }
+.acquire-bar select {
+  padding: 4px 8px;
+  border: 1px solid var(--borders);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+.acquire-bar button {
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.acquire-bar button:hover { background: #15573c; }
+.acquire-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Garden */
+.garden-area {
+  background: var(--surface);
+  border: 1px solid var(--borders);
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 400px;
+  overflow: auto;
+}
+.garden-area h2 { font-size: 0.9rem; margin-bottom: 8px; color: var(--accent); }
+.garden-svg { display: block; margin: 0 auto; }
+.hex-cell { stroke: var(--borders); stroke-width: 1; fill: var(--surface); cursor: pointer; transition: fill 0.15s; }
+.hex-cell:hover { fill: #f0ebe3; }
+.hex-cell.occupied { cursor: default; }
+.hex-cell.valid-target { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 2; fill: #e8f5e9; }
+.hex-cell.fountain { fill: #e3f2fd; stroke: var(--light-blue); }
+.hex-pattern { pointer-events: none; font-size: 11px; fill: white; text-anchor: middle; dominant-baseline: central; font-weight: bold; }
+/* Sidebar */
+.sidebar { display: flex; flex-direction: column; gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--borders); border-radius: 8px; padding: 10px; }
+.panel h3 { font-size: 0.8rem; color: var(--accent); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+/* Scores */
+.scores { display: flex; flex-direction: column; gap: 3px; }
+.score-row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; font-size: 0.8rem; }
+.score-row.active { background: #e8f5e9; font-weight: 600; }
+.score-dot { width: 9px; height: 9px; border-radius: 50%; }
+.score-name { flex: 1; }
+.score-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Storage */
+.storage-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+.storage-slot {
+  aspect-ratio: 1; border: 1.5px dashed var(--borders); border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.15s; min-height: 32px;
 }
 .storage-slot:hover { border-color: var(--accent); }
 .storage-slot.has-tile { border-style: solid; cursor: grab; }
 .storage-slot.selected { border-color: var(--accent); border-width: 2px; box-shadow: 0 0 0 2px rgba(27,107,74,0.3); }
 .tile-pip {
-  width: 80%;
-  height: 80%;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: bold;
-  color: white;
+  width: 80%; height: 80%; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: bold; color: white;
 }
-/* Expansion slots */
-.expansion-slots {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
+.expansion-slots { display: flex; gap: 6px; margin-top: 6px; }
 .expansion-slot {
-  flex: 1;
-  height: 48px;
-  border: 1.5px dashed var(--borders);
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  color: var(--text-muted);
+  flex: 1; height: 40px; border: 1.5px dashed var(--borders); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; color: var(--text-muted);
 }
-/* Scoreboard */
-.scores { display: flex; flex-direction: column; gap: 4px; }
-.score-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.85rem;
-}
-.score-row.active { background: #e8f5e9; font-weight: 600; }
-.score-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-.score-name { flex: 1; }
-.score-val { font-weight: 700; font-variant-numeric: tabular-nums; }
-/* Action bar */
-.actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+.expansion-slot.has-exp { border-style: solid; border-color: var(--accent); background: #f0f9f4; font-weight: 600; font-size: 0.7rem; color: var(--accent); }
+/* Actions */
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .actions button {
-  padding: 8px 16px;
-  border: 1px solid var(--borders);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 0.8rem;
-  transition: all 0.15s;
+  padding: 6px 12px; border: 1px solid var(--borders); border-radius: 5px;
+  background: var(--surface); color: var(--text); cursor: pointer;
+  font-size: 0.75rem; transition: all 0.15s;
 }
 .actions button:hover { border-color: var(--accent); color: var(--accent); }
 .actions button.primary { background: var(--accent); color: white; border-color: var(--accent); }
 .actions button.primary:hover { background: #15573c; }
 .actions button:disabled { opacity: 0.4; cursor: not-allowed; }
-/* Game log */
-.log-entries {
-  max-height: 120px;
-  overflow-y: auto;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-.log-entry { padding: 1px 0; border-bottom: 1px solid #f0ebe3; }
-/* Tile reference */
-.tile-ref {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  font-size: 0.7rem;
-}
-.tile-ref-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.tile-ref-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-}
-/* Info tooltip */
+/* Info bar */
 .info-bar {
-  padding: 8px 12px;
-  background: #fffde7;
-  border: 1px solid #fff9c4;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  color: var(--text);
+  padding: 6px 10px; background: #fffde7; border: 1px solid #fff9c4;
+  border-radius: 5px; font-size: 0.75rem; color: var(--text); margin-bottom: 6px;
 }
+/* Log */
+.log-entries { max-height: 100px; overflow-y: auto; font-size: 0.7rem; color: var(--text-muted); line-height: 1.4; }
+.log-entry { padding: 1px 0; border-bottom: 1px solid #f0ebe3; }
+/* Tile ref */
+.tile-ref { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; font-size: 0.65rem; }
+.tile-ref-item { display: flex; align-items: center; gap: 3px; }
+.tile-ref-swatch { width: 10px; height: 10px; border-radius: 2px; }
+/* Turn indicator */
+.turn-indicator {
+  text-align: center; font-size: 0.85rem; font-weight: 600;
+  padding: 6px; background: #e8f5e9; border-radius: 6px; margin-bottom: 6px;
+}
+.turn-indicator.waiting { background: #fff3e0; }
+/* Bag counter */
+.bag-counter { font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 4px; }
 </style>
 </head>
 <body>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">Phase 1 — Hex Grid + Data Model</span>
+  <span class="phase-tag">Phase 2 — Drafting System</span>
 </header>
 <main>
+  <!-- Display Area -->
+  <div class="display-area" id="displayArea">
+    <h2>Display Area — Round <span id="displayRound">1</span>/4</h2>
+    <div class="display-row" id="displayRow"></div>
+    <div class="acquire-bar" id="acquireBar">
+      <label>Acquire:</label>
+      <select id="acquireType">
+        <option value="color">Color</option>
+        <option value="pattern">Pattern</option>
+      </select>
+      <select id="acquireValue"></select>
+      <button id="btnAcquire">Take Matching</button>
+      <span id="acquirePreview" style="font-size:0.75rem;color:var(--text-muted)"></span>
+    </div>
+  </div>
+  <!-- Garden -->
   <div class="garden-area" id="gardenArea">
     <h2>Your Garden</h2>
     <div id="gardenContainer"></div>
   </div>
+  <!-- Sidebar -->
   <div class="sidebar">
     <div class="panel">
+      <div class="turn-indicator" id="turnIndicator">Your Turn</div>
       <h3>Scores — Round <span id="roundNum">1</span>/4</h3>
       <div class="scores" id="scoreBoard"></div>
     </div>
     <div class="panel">
-      <h3>Storage Board (<span id="storageCount">3</span>/12)</h3>
+      <h3>Storage (<span id="storageCount">0</span>/12 tiles, <span id="expCount">0</span>/2 exp)</h3>
       <div class="storage-grid" id="storageGrid"></div>
-      <div class="expansion-slots">
-        <div class="expansion-slot" id="expSlot0">Expansion 1</div>
-        <div class="expansion-slot" id="expSlot1">Expansion 2</div>
+      <div class="expansion-slots" id="expansionSlots">
+        <div class="expansion-slot" id="expSlot0">Empty</div>
+        <div class="expansion-slot" id="expSlot1">Empty</div>
       </div>
+      <div class="bag-counter" id="bagCounter"></div>
     </div>
     <div class="panel">
       <h3>Actions</h3>
-      <div id="infoBar" class="info-bar">Select a tile from storage, then click a valid hex to place it.</div>
-      <div class="actions" style="margin-top:8px">
-        <button id="btnPlace" class="primary" disabled>Place Tile</button>
+      <div id="infoBar" class="info-bar">Choose an action: Acquire tiles, Place a tile, or Pass.</div>
+      <div class="actions" style="margin-top:6px">
+        <button id="btnPlace" disabled>Place Tile</button>
         <button id="btnPass">Pass</button>
         <button id="btnNewGame">New Game</button>
       </div>
     </div>
     <div class="panel">
-      <h3>Tile Reference</h3>
-      <div class="tile-ref" id="tileRef"></div>
-    </div>
-    <div class="panel">
       <h3>Game Log</h3>
       <div class="log-entries" id="gameLog"></div>
+    </div>
+    <div class="panel">
+      <h3>Reference</h3>
+      <div class="tile-ref" id="tileRef"></div>
     </div>
   </div>
 </main>
 <script>
 /* ============================================================
-   AZUL: QUEEN'S GARDEN — Phase 1: Core hex grid + data model
+   AZUL: QUEEN'S GARDEN — Phase 1+2: Hex grid, data model,
+   adjacency, drafting system
    ============================================================ */
 
 // === CONSTANTS ===
@@ -293,16 +308,25 @@ const PATTERNS = [
   { name: 'Tulip',     cost: 6, icon: '🌷', id: 'tulip' }
 ];
 
+const COLOR_MAP = {};
+COLORS.forEach(function(c) { COLOR_MAP[c.id] = c; });
+const PATTERN_MAP = {};
+PATTERNS.forEach(function(p) { PATTERN_MAP[p.id] = p; });
+
 const HEX_SIZE = 28;
 const SQRT3 = Math.sqrt(3);
+const EXPANSIONS_PER_ROUND = 9; // for 4 players
+const TILES_PER_EXPANSION = 4;
 
 // === TILE FACTORY ===
 function createAllTiles() {
-  const tiles = [];
-  let id = 0;
-  for (const color of COLORS) {
-    for (const pattern of PATTERNS) {
-      for (let copy = 0; copy < 3; copy++) {
+  var tiles = [];
+  var id = 0;
+  for (var ci = 0; ci < COLORS.length; ci++) {
+    var color = COLORS[ci];
+    for (var pi = 0; pi < PATTERNS.length; pi++) {
+      var pattern = PATTERNS[pi];
+      for (var copy = 0; copy < 3; copy++) {
         tiles.push({
           id: id++,
           color: color.id,
@@ -311,7 +335,8 @@ function createAllTiles() {
           pattern: pattern.id,
           patternName: pattern.name,
           patternIcon: pattern.icon,
-          cost: pattern.cost
+          cost: pattern.cost,
+          isJoker: false
         });
       }
     }
@@ -320,8 +345,8 @@ function createAllTiles() {
 }
 
 function createJokers() {
-  const jokers = [];
-  for (let i = 0; i < 24; i++) {
+  var jokers = [];
+  for (var i = 0; i < 24; i++) {
     jokers.push({
       id: 1000 + i,
       color: 'joker',
@@ -338,100 +363,114 @@ function createJokers() {
 }
 
 function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+  var a = arr.slice();
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = a[i]; a[i] = a[j]; a[j] = tmp;
   }
   return a;
 }
 
-// === HEX GRID MATH (axial coordinates) ===
-// Pointy-top hexagons
-function hexToPixel(q, r, size) {
-  const x = size * (SQRT3 * q + SQRT3 / 2 * r);
-  const y = size * (3 / 2 * r);
-  return { x, y };
+// === EXPANSION FACTORY ===
+// Each expansion: 7-hex piece with a pavilion center and one hex having a specific color+pattern combo
+function createExpansions() {
+  var expansions = [];
+  var id = 0;
+  // Generate 36 unique expansions (one per color/pattern combo), shuffle & use 9 per round
+  for (var ci = 0; ci < COLORS.length; ci++) {
+    for (var pi = 0; pi < PATTERNS.length; pi++) {
+      expansions.push({
+        id: id++,
+        color: COLORS[ci].id,
+        colorName: COLORS[ci].name,
+        colorHex: COLORS[ci].hex,
+        pattern: PATTERNS[pi].id,
+        patternName: PATTERNS[pi].name,
+        patternIcon: PATTERNS[pi].icon,
+        faceUp: false,
+        tilesOnTop: [] // tiles drawn onto this expansion in the stack
+      });
+    }
+  }
+  return shuffle(expansions);
 }
 
-function hexCorners(cx, cy, size) {
-  const corners = [];
-  for (let i = 0; i < 6; i++) {
-    const angle = Math.PI / 180 * (60 * i - 30);
-    corners.push({
-      x: cx + size * Math.cos(angle),
-      y: cy + size * Math.sin(angle)
-    });
-  }
-  return corners;
+// === HEX GRID MATH ===
+function hexToPixel(q, r, size) {
+  return {
+    x: size * (SQRT3 * q + SQRT3 / 2 * r),
+    y: size * (3 / 2 * r)
+  };
 }
 
 function hexPoints(cx, cy, size) {
-  return hexCorners(cx, cy, size).map(c => c.x + ',' + c.y).join(' ');
+  var pts = [];
+  for (var i = 0; i < 6; i++) {
+    var angle = Math.PI / 180 * (60 * i - 30);
+    pts.push((cx + size * Math.cos(angle)) + ',' + (cy + size * Math.sin(angle)));
+  }
+  return pts.join(' ');
 }
 
-// Axial neighbors
-const HEX_DIRS = [
-  { q: 1, r: 0 }, { q: 1, r: -1 }, { q: 0, r: -1 },
-  { q: -1, r: 0 }, { q: -1, r: 1 }, { q: 0, r: 1 }
+var HEX_DIRS = [
+  {q:1,r:0},{q:1,r:-1},{q:0,r:-1},{q:-1,r:0},{q:-1,r:1},{q:0,r:1}
 ];
 
 function hexNeighbors(q, r) {
-  return HEX_DIRS.map(d => ({ q: q + d.q, r: r + d.r }));
+  return HEX_DIRS.map(function(d) { return { q: q + d.q, r: r + d.r }; });
 }
 
 function hexKey(q, r) { return q + ',' + r; }
 
-// === FOUNTAIN BOARD (starting 13-hex piece) ===
-// Center hex + 2 rings. We use a hex shape of radius 1 around center
-// then add a partial second ring to make ~13 hexes
+// === FOUNTAIN BOARD ===
 function createFountainLayout() {
-  const cells = [];
-  // Ring 0 (center)
+  var cells = [];
   cells.push({ q: 0, r: 0, feature: 'fountain' });
-  // Ring 1 (6 cells)
-  for (const d of HEX_DIRS) {
-    cells.push({ q: d.q, r: d.r, feature: null });
+  for (var i = 0; i < HEX_DIRS.length; i++) {
+    cells.push({ q: HEX_DIRS[i].q, r: HEX_DIRS[i].r, feature: null });
   }
-  // Ring 2 partial (6 more to make 13 total)
-  const ring2 = [
-    { q: 2, r: -1 }, { q: 1, r: 1 }, { q: -1, r: 2 },
-    { q: -2, r: 1 }, { q: -1, r: -1 }, { q: 1, r: -2 }
-  ];
-  for (const c of ring2) {
-    cells.push({ q: c.q, r: c.r, feature: null });
+  var ring2 = [{q:2,r:-1},{q:1,r:1},{q:-1,r:2},{q:-2,r:1},{q:-1,r:-1},{q:1,r:-2}];
+  for (var j = 0; j < ring2.length; j++) {
+    cells.push({ q: ring2[j].q, r: ring2[j].r, feature: null });
   }
   return cells;
 }
 
 // === GAME STATE ===
-const State = {
+var State = {
   players: [],
   currentPlayer: 0,
   round: 1,
   bag: [],
-  allTiles: [],
   jokerPool: [],
+  allExpansions: [],
+  // Display area
+  expansionStack: [],    // face-down expansions with tiles on top
+  displayExpansions: [],  // face-up expansions in the display
+  // Per-player
   selectedStorageTile: null,
   selectedHex: null,
-  garden: new Map(), // hexKey -> { q, r, tile, feature }
-  gardenCells: [],   // all valid hex positions
-  storage: [],       // tiles in player storage (max 12)
-  expansionStorage: [], // expansions (max 2)
-  log: []
+  garden: new Map(),
+  gardenCells: [],
+  storage: [],           // max 12 tiles
+  expansionStorage: [],  // max 2 expansions
+  log: [],
+  phase: 'acquire', // acquire | place | pass | roundEnd
+  roundPassed: []  // players who have passed this round
 };
 
 function initGame() {
-  State.allTiles = createAllTiles();
+  State.bag = shuffle(createAllTiles());
   State.jokerPool = createJokers();
-  State.bag = shuffle([...State.allTiles]);
+  State.allExpansions = createExpansions();
   State.round = 1;
   State.currentPlayer = 0;
   State.selectedStorageTile = null;
   State.selectedHex = null;
   State.log = [];
+  State.phase = 'acquire';
+  State.roundPassed = [false, false, false, false];
 
-  // Players
   State.players = [
     { name: 'You',        score: 15, color: '#2C2416', isHuman: true },
     { name: 'AI-Greedy',  score: 15, color: '#C62828', isHuman: false },
@@ -439,93 +478,214 @@ function initGame() {
     { name: 'AI-Balance', score: 15, color: '#6A1B9A', isHuman: false }
   ];
 
-  // Initialize fountain board
+  // Init fountain garden
   State.gardenCells = createFountainLayout();
   State.garden = new Map();
-  for (const cell of State.gardenCells) {
+  for (var i = 0; i < State.gardenCells.length; i++) {
+    var cell = State.gardenCells[i];
     State.garden.set(hexKey(cell.q, cell.r), {
-      q: cell.q, r: cell.r,
-      tile: null,
-      feature: cell.feature
+      q: cell.q, r: cell.r, tile: null, feature: cell.feature
     });
   }
 
-  // Give player 3 jokers to start
+  // Start with 3 jokers
   State.storage = [];
-  for (let i = 0; i < 3; i++) {
-    if (State.jokerPool.length) {
-      State.storage.push(State.jokerPool.shift());
-    }
+  for (var j = 0; j < 3; j++) {
+    if (State.jokerPool.length) State.storage.push(State.jokerPool.shift());
   }
   State.expansionStorage = [];
 
-  // Add some sample tiles to storage for testing placement
-  for (let i = 0; i < 5; i++) {
-    if (State.bag.length) State.storage.push(State.bag.pop());
-  }
+  // Set up display for round 1
+  setupRoundDisplay();
 
   addLog('Game started! Round 1 of 4.');
-  addLog('You have 3 Jokers + 5 tiles to test placement.');
+  addLog('Use Acquire to take tiles from the display.');
   renderAll();
 }
 
-// === ADJACENCY VALIDATION ===
+// === ROUND DISPLAY SETUP ===
+function setupRoundDisplay() {
+  State.expansionStack = [];
+  State.displayExpansions = [];
+
+  // Take EXPANSIONS_PER_ROUND expansions for this round
+  var roundExps = State.allExpansions.splice(0, EXPANSIONS_PER_ROUND);
+
+  // All start face-down in the stack with tiles on top
+  for (var i = 0; i < roundExps.length; i++) {
+    var exp = roundExps[i];
+    exp.faceUp = false;
+    exp.tilesOnTop = [];
+    // Draw TILES_PER_EXPANSION tiles from bag onto this expansion
+    for (var t = 0; t < TILES_PER_EXPANSION; t++) {
+      if (State.bag.length) {
+        exp.tilesOnTop.push(State.bag.pop());
+      }
+    }
+    State.expansionStack.push(exp);
+  }
+
+  addLog('Round ' + State.round + ': ' + roundExps.length + ' expansions placed, ' +
+    State.bag.length + ' tiles remain in bag.');
+}
+
+// === ACQUIRE ACTION ===
+function getAcquireMatches(type, value) {
+  var matchedTiles = [];
+  var matchedExpansions = [];
+
+  // Check tiles on top of stacked expansions
+  for (var i = 0; i < State.expansionStack.length; i++) {
+    var exp = State.expansionStack[i];
+    for (var t = 0; t < exp.tilesOnTop.length; t++) {
+      var tile = exp.tilesOnTop[t];
+      if (type === 'color' && tile.color === value) matchedTiles.push({ source: 'stack', expIdx: i, tileIdx: t, tile: tile });
+      if (type === 'pattern' && tile.pattern === value) matchedTiles.push({ source: 'stack', expIdx: i, tileIdx: t, tile: tile });
+    }
+  }
+
+  // Check face-up expansions in display
+  for (var j = 0; j < State.displayExpansions.length; j++) {
+    var dExp = State.displayExpansions[j];
+    if (type === 'color' && dExp.color === value) matchedExpansions.push({ source: 'display', expIdx: j, exp: dExp });
+    if (type === 'pattern' && dExp.pattern === value) matchedExpansions.push({ source: 'display', expIdx: j, exp: dExp });
+  }
+
+  return { tiles: matchedTiles, expansions: matchedExpansions };
+}
+
+function executeAcquire(type, value) {
+  var matches = getAcquireMatches(type, value);
+
+  if (matches.tiles.length === 0 && matches.expansions.length === 0) {
+    addLog('No matching tiles or expansions found!');
+    return false;
+  }
+
+  // Check storage capacity
+  var tileSpace = 12 - State.storage.length;
+  var expSpace = 2 - State.expansionStorage.length;
+
+  if (matches.tiles.length > tileSpace) {
+    addLog('Not enough storage space! Need ' + matches.tiles.length + ' slots, have ' + tileSpace + '.');
+    return false;
+  }
+
+  if (matches.expansions.length > expSpace) {
+    addLog('Not enough expansion storage! Need ' + matches.expansions.length + ' slots, have ' + expSpace + '.');
+    return false;
+  }
+
+  // Collect tiles (work backwards to avoid index shifting)
+  var tilesCollected = 0;
+  // Group by expansion index, process each
+  var expIndicesAffected = new Set();
+  // Sort matches by expIdx descending, tileIdx descending for safe removal
+  matches.tiles.sort(function(a, b) {
+    if (a.expIdx !== b.expIdx) return b.expIdx - a.expIdx;
+    return b.tileIdx - a.tileIdx;
+  });
+
+  for (var i = 0; i < matches.tiles.length; i++) {
+    var m = matches.tiles[i];
+    State.storage.push(m.tile);
+    State.expansionStack[m.expIdx].tilesOnTop.splice(m.tileIdx, 1);
+    expIndicesAffected.add(m.expIdx);
+    tilesCollected++;
+  }
+
+  // Process affected expansions: if tiles removed and now empty → flip face-up to display
+  // Process from highest index first
+  var affectedArr = Array.from(expIndicesAffected).sort(function(a, b) { return b - a; });
+  for (var j = 0; j < affectedArr.length; j++) {
+    var idx = affectedArr[j];
+    var exp = State.expansionStack[idx];
+    if (exp.tilesOnTop.length === 0) {
+      // Expansion is now empty → flip face-up and move to display
+      exp.faceUp = true;
+      State.displayExpansions.push(exp);
+      State.expansionStack.splice(idx, 1);
+      addLog('Expansion flipped face-up: ' + exp.colorName + ' ' + exp.patternName);
+
+      // If there's a next expansion on the stack, draw new tiles onto it
+      // (In the real game, the "next" expansion gets revealed and loaded)
+      // Actually each expansion already has its own tiles. The stack just shows the top one.
+      // When tiles are removed from the TOP expansion on stack: that expansion moves to display,
+      // the next one is revealed, 4 new tiles drawn onto it.
+      // But for simplicity in our model each expansion has its own tiles pre-loaded.
+      // No need to re-draw tiles since they're pre-loaded.
+    }
+  }
+
+  // Collect matching face-up expansions
+  var expsCollected = 0;
+  // Sort by index descending
+  matches.expansions.sort(function(a, b) { return b.expIdx - a.expIdx; });
+  for (var k = 0; k < matches.expansions.length; k++) {
+    var em = matches.expansions[k];
+    // Find current index (may have shifted if we added new ones above)
+    var currentIdx = State.displayExpansions.indexOf(em.exp);
+    if (currentIdx >= 0) {
+      State.expansionStorage.push(em.exp);
+      State.displayExpansions.splice(currentIdx, 1);
+      expsCollected++;
+    }
+  }
+
+  var typeName = type === 'color' ? COLOR_MAP[value].name : PATTERN_MAP[value].name;
+  addLog('Acquired ' + tilesCollected + ' tile(s) + ' + expsCollected + ' expansion(s) matching ' + typeName + '.');
+  return true;
+}
+
+// === ADJACENCY VALIDATION (from Phase 1) ===
 function canPlaceTile(q, r, tile) {
-  const cell = State.garden.get(hexKey(q, r));
+  var cell = State.garden.get(hexKey(q, r));
   if (!cell) return false;
-  if (cell.tile) return false; // already occupied
+  if (cell.tile) return false;
 
-  const neighbors = hexNeighbors(q, r);
-  let hasAdjacentTile = false;
+  var neighbors = hexNeighbors(q, r);
+  var hasAdjacentTile = false;
 
-  for (const n of neighbors) {
-    const nCell = State.garden.get(hexKey(n.q, n.r));
+  for (var i = 0; i < neighbors.length; i++) {
+    var n = neighbors[i];
+    var nCell = State.garden.get(hexKey(n.q, n.r));
     if (!nCell || !nCell.tile) continue;
     hasAdjacentTile = true;
-    const nt = nCell.tile;
+    var nt = nCell.tile;
 
-    // Cannot place identical tile adjacent
     if (nt.color === tile.color && nt.pattern === tile.pattern) return false;
-
-    // Must share color OR pattern (jokers are wild — always OK)
-    if (tile.isJoker || nt.tile?.isJoker) continue;
+    if (tile.isJoker || nt.isJoker) continue;
     if (nt.color !== tile.color && nt.pattern !== tile.pattern) return false;
   }
 
-  // If garden has any tiles, must be adjacent to at least one
-  // (unless this is the first tile placed)
-  let gardenHasTiles = false;
-  for (const [, c] of State.garden) {
-    if (c.tile) { gardenHasTiles = true; break; }
-  }
+  var gardenHasTiles = false;
+  State.garden.forEach(function(c) { if (c.tile) gardenHasTiles = true; });
   if (gardenHasTiles && !hasAdjacentTile) return false;
 
   return true;
 }
 
 function getValidPlacements(tile) {
-  const valid = [];
-  for (const [key, cell] of State.garden) {
+  var valid = [];
+  State.garden.forEach(function(cell, key) {
     if (canPlaceTile(cell.q, cell.r, tile)) {
-      valid.push({ q: cell.q, r: cell.r, key });
+      valid.push({ q: cell.q, r: cell.r, key: key });
     }
-  }
+  });
   return valid;
 }
 
 // === PLACE TILE ===
 function placeTile(q, r, tileIndex) {
-  const tile = State.storage[tileIndex];
+  var tile = State.storage[tileIndex];
   if (!tile) return false;
   if (!canPlaceTile(q, r, tile)) return false;
 
-  const cell = State.garden.get(hexKey(q, r));
+  var cell = State.garden.get(hexKey(q, r));
   cell.tile = tile;
   State.storage.splice(tileIndex, 1);
 
-  // Check if any feature is now fully surrounded
   checkFeatureSurrounded(q, r);
-
   addLog('Placed ' + tile.patternIcon + ' ' + tile.colorName + ' ' + tile.patternName + ' at (' + q + ',' + r + ')');
   State.selectedStorageTile = null;
   State.selectedHex = null;
@@ -534,28 +694,24 @@ function placeTile(q, r, tileIndex) {
 }
 
 function checkFeatureSurrounded(pq, pr) {
-  // Check all neighbors — if any have a feature, see if that feature is fully surrounded
-  const toCheck = [{ q: pq, r: pr }, ...hexNeighbors(pq, pr)];
-  for (const pos of toCheck) {
-    const cell = State.garden.get(hexKey(pos.q, pos.r));
+  var toCheck = [{ q: pq, r: pr }].concat(hexNeighbors(pq, pr));
+  for (var i = 0; i < toCheck.length; i++) {
+    var pos = toCheck[i];
+    var cell = State.garden.get(hexKey(pos.q, pos.r));
     if (!cell || !cell.feature) continue;
 
-    const nbrs = hexNeighbors(pos.q, pos.r);
-    let allFilled = true;
-    let validNeighborCount = 0;
-    for (const n of nbrs) {
-      const nc = State.garden.get(hexKey(n.q, n.r));
-      if (!nc) continue; // edge of garden, not a valid space
-      validNeighborCount++;
+    var nbrs = hexNeighbors(pos.q, pos.r);
+    var allFilled = true;
+    var validCount = 0;
+    for (var j = 0; j < nbrs.length; j++) {
+      var nc = State.garden.get(hexKey(nbrs[j].q, nbrs[j].r));
+      if (!nc) continue;
+      validCount++;
       if (!nc.tile) { allFilled = false; break; }
     }
-    if (allFilled && validNeighborCount > 0) {
-      // Award joker
-      if (State.jokerPool.length > 0 && State.storage.length < 12) {
-        const j = State.jokerPool.shift();
-        State.storage.push(j);
-        addLog('🎉 Surrounded ' + cell.feature + '! Gained a Joker.');
-      }
+    if (allFilled && validCount > 0 && State.jokerPool.length > 0 && State.storage.length < 12) {
+      State.storage.push(State.jokerPool.shift());
+      addLog('🎉 Surrounded ' + cell.feature + '! Gained a Joker.');
     }
   }
 }
@@ -563,11 +719,12 @@ function checkFeatureSurrounded(pq, pr) {
 // === LOGGING ===
 function addLog(msg) {
   State.log.unshift(msg);
-  if (State.log.length > 50) State.log.pop();
+  if (State.log.length > 80) State.log.pop();
 }
 
 // === RENDERING ===
 function renderAll() {
+  renderDisplay();
   renderGarden();
   renderStorage();
   renderScoreBoard();
@@ -575,42 +732,124 @@ function renderAll() {
   renderTileRef();
   updateInfoBar();
   updateButtons();
+  updateAcquireOptions();
+  updateBagCounter();
+}
+
+function renderDisplay() {
+  var row = document.getElementById('displayRow');
+  while (row.firstChild) row.removeChild(row.firstChild);
+
+  // Render expansion stack items
+  for (var i = 0; i < State.expansionStack.length; i++) {
+    var exp = State.expansionStack[i];
+    var item = document.createElement('div');
+    item.classList.add('exp-stack-item');
+
+    var label = document.createElement('div');
+    label.classList.add('exp-label');
+    label.textContent = 'Stack #' + (i + 1) + ' (face-down)';
+    item.appendChild(label);
+
+    // Show tiles on top
+    if (exp.tilesOnTop.length > 0) {
+      var tilesDiv = document.createElement('div');
+      tilesDiv.classList.add('exp-tiles');
+      for (var t = 0; t < exp.tilesOnTop.length; t++) {
+        var tile = exp.tilesOnTop[t];
+        var pip = document.createElement('div');
+        pip.classList.add('exp-tile-pip');
+        pip.style.background = tile.colorHex;
+        pip.textContent = tile.patternIcon;
+        pip.title = tile.colorName + ' ' + tile.patternName + ' (cost ' + tile.cost + ')';
+        tilesDiv.appendChild(pip);
+      }
+      item.appendChild(tilesDiv);
+    } else {
+      var empty = document.createElement('div');
+      empty.style.fontSize = '0.7rem';
+      empty.style.color = '#999';
+      empty.textContent = 'No tiles';
+      item.appendChild(empty);
+    }
+
+    row.appendChild(item);
+  }
+
+  // Render face-up display expansions
+  for (var j = 0; j < State.displayExpansions.length; j++) {
+    var dExp = State.displayExpansions[j];
+    var dItem = document.createElement('div');
+    dItem.classList.add('exp-stack-item');
+    dItem.classList.add('face-up');
+
+    var dLabel = document.createElement('div');
+    dLabel.classList.add('exp-label');
+    dLabel.textContent = 'Expansion (face-up)';
+    dItem.appendChild(dLabel);
+
+    var combo = document.createElement('div');
+    combo.classList.add('exp-combo');
+    combo.textContent = dExp.patternIcon + ' ' + dExp.colorName + ' ' + dExp.patternName;
+    dItem.appendChild(combo);
+
+    // Show a visual indicator of the expansion's color
+    var swatch = document.createElement('div');
+    swatch.style.width = '100%';
+    swatch.style.height = '8px';
+    swatch.style.borderRadius = '4px';
+    swatch.style.background = dExp.colorHex;
+    swatch.style.marginTop = '4px';
+    dItem.appendChild(swatch);
+
+    row.appendChild(dItem);
+  }
+
+  // If nothing in display
+  if (State.expansionStack.length === 0 && State.displayExpansions.length === 0) {
+    var emptyMsg = document.createElement('div');
+    emptyMsg.style.fontSize = '0.8rem';
+    emptyMsg.style.color = '#999';
+    emptyMsg.style.padding = '20px';
+    emptyMsg.textContent = 'Display empty — round will end when all players pass.';
+    row.appendChild(emptyMsg);
+  }
+
+  document.getElementById('displayRound').textContent = State.round;
 }
 
 function renderGarden() {
-  const container = document.getElementById('gardenContainer');
+  var container = document.getElementById('gardenContainer');
   while (container.firstChild) container.removeChild(container.firstChild);
 
-  // Calculate bounds
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const [, cell] of State.garden) {
-    const { x, y } = hexToPixel(cell.q, cell.r, HEX_SIZE);
-    minX = Math.min(minX, x - HEX_SIZE);
-    maxX = Math.max(maxX, x + HEX_SIZE);
-    minY = Math.min(minY, y - HEX_SIZE);
-    maxY = Math.max(maxY, y + HEX_SIZE);
-  }
+  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  State.garden.forEach(function(cell) {
+    var p = hexToPixel(cell.q, cell.r, HEX_SIZE);
+    minX = Math.min(minX, p.x - HEX_SIZE);
+    maxX = Math.max(maxX, p.x + HEX_SIZE);
+    minY = Math.min(minY, p.y - HEX_SIZE);
+    maxY = Math.max(maxY, p.y + HEX_SIZE);
+  });
 
-  const pad = 10;
-  const w = maxX - minX + pad * 2;
-  const h = maxY - minY + pad * 2;
-  const offX = -minX + pad;
-  const offY = -minY + pad;
+  var pad = 10;
+  var w = maxX - minX + pad * 2;
+  var h = maxY - minY + pad * 2;
+  var offX = -minX + pad;
+  var offY = -minY + pad;
 
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', w);
   svg.setAttribute('height', h);
   svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
   svg.classList.add('garden-svg');
 
-  for (const [key, cell] of State.garden) {
-    const { x, y } = hexToPixel(cell.q, cell.r, HEX_SIZE);
-    const cx = x + offX;
-    const cy = y + offY;
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  State.garden.forEach(function(cell) {
+    var p = hexToPixel(cell.q, cell.r, HEX_SIZE);
+    var cx = p.x + offX;
+    var cy = p.y + offY;
+    var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
 
-    // Hex polygon
-    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('points', hexPoints(cx, cy, HEX_SIZE - 1));
     poly.classList.add('hex-cell');
 
@@ -623,24 +862,21 @@ function renderGarden() {
       poly.classList.add('fountain');
     }
 
-    // Highlight valid placement targets
     if (State.selectedStorageTile !== null) {
-      const tile = State.storage[State.selectedStorageTile];
-      if (tile && !cell.tile && canPlaceTile(cell.q, cell.r, tile)) {
+      var stile = State.storage[State.selectedStorageTile];
+      if (stile && !cell.tile && canPlaceTile(cell.q, cell.r, stile)) {
         poly.classList.add('valid-target');
       }
     }
 
-    // Click to select hex for placement
-    poly.addEventListener('click', function() {
-      handleHexClick(cell.q, cell.r);
-    });
+    (function(qq, rr) {
+      poly.addEventListener('click', function() { handleHexClick(qq, rr); });
+    })(cell.q, cell.r);
 
     g.appendChild(poly);
 
-    // Tile pattern icon
     if (cell.tile) {
-      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      var txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       txt.setAttribute('x', cx);
       txt.setAttribute('y', cy);
       txt.classList.add('hex-pattern');
@@ -648,195 +884,376 @@ function renderGarden() {
       g.appendChild(txt);
     }
 
-    // Feature icon
     if (cell.feature && !cell.tile) {
-      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      txt.setAttribute('x', cx);
-      txt.setAttribute('y', cy);
-      txt.classList.add('hex-pattern');
-      txt.style.fill = '#64B5F6';
-      txt.style.fontSize = '14px';
-      txt.textContent = cell.feature === 'fountain' ? '⛲' : '🏛️';
-      g.appendChild(txt);
+      var ftxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      ftxt.setAttribute('x', cx);
+      ftxt.setAttribute('y', cy);
+      ftxt.classList.add('hex-pattern');
+      ftxt.style.fill = '#64B5F6';
+      ftxt.style.fontSize = '14px';
+      ftxt.textContent = cell.feature === 'fountain' ? '⛲' : '🏛️';
+      g.appendChild(ftxt);
     }
 
-    // Coordinate label (debug)
-    const coordTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    coordTxt.setAttribute('x', cx);
-    coordTxt.setAttribute('y', cy + HEX_SIZE * 0.7);
-    coordTxt.style.fontSize = '7px';
-    coordTxt.style.fill = '#bbb';
-    coordTxt.style.textAnchor = 'middle';
-    coordTxt.textContent = cell.q + ',' + cell.r;
-    g.appendChild(coordTxt);
-
     svg.appendChild(g);
-  }
+  });
 
   container.appendChild(svg);
 }
 
 function renderStorage() {
-  const grid = document.getElementById('storageGrid');
+  var grid = document.getElementById('storageGrid');
   while (grid.firstChild) grid.removeChild(grid.firstChild);
 
-  for (let i = 0; i < 12; i++) {
-    const slot = document.createElement('div');
+  for (var i = 0; i < 12; i++) {
+    var slot = document.createElement('div');
     slot.classList.add('storage-slot');
 
     if (i < State.storage.length) {
-      const tile = State.storage[i];
+      var tile = State.storage[i];
       slot.classList.add('has-tile');
       if (State.selectedStorageTile === i) slot.classList.add('selected');
 
-      const pip = document.createElement('div');
+      var pip = document.createElement('div');
       pip.classList.add('tile-pip');
       pip.style.background = tile.colorHex;
       pip.textContent = tile.patternIcon;
+      pip.title = tile.colorName + ' ' + tile.patternName;
       slot.appendChild(pip);
 
-      const idx = i;
-      slot.addEventListener('click', function() { handleStorageClick(idx); });
+      (function(idx) {
+        slot.addEventListener('click', function() { handleStorageClick(idx); });
+      })(i);
     }
 
     grid.appendChild(slot);
   }
 
   document.getElementById('storageCount').textContent = State.storage.length;
+  document.getElementById('expCount').textContent = State.expansionStorage.length;
+
+  // Expansion slots
+  for (var e = 0; e < 2; e++) {
+    var eSlot = document.getElementById('expSlot' + e);
+    while (eSlot.firstChild) eSlot.removeChild(eSlot.firstChild);
+    eSlot.className = 'expansion-slot';
+    if (e < State.expansionStorage.length) {
+      var exp = State.expansionStorage[e];
+      eSlot.classList.add('has-exp');
+      eSlot.textContent = exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName;
+    } else {
+      eSlot.textContent = 'Empty';
+    }
+  }
 }
 
 function renderScoreBoard() {
-  const board = document.getElementById('scoreBoard');
+  var board = document.getElementById('scoreBoard');
   while (board.firstChild) board.removeChild(board.firstChild);
 
-  State.players.forEach(function(p, i) {
-    const row = document.createElement('div');
+  for (var i = 0; i < State.players.length; i++) {
+    var p = State.players[i];
+    var row = document.createElement('div');
     row.classList.add('score-row');
     if (i === State.currentPlayer) row.classList.add('active');
 
-    const dot = document.createElement('span');
+    var dot = document.createElement('span');
     dot.classList.add('score-dot');
     dot.style.background = p.color;
     row.appendChild(dot);
 
-    const name = document.createElement('span');
+    var name = document.createElement('span');
     name.classList.add('score-name');
-    name.textContent = p.name;
+    name.textContent = p.name + (State.roundPassed[i] ? ' (passed)' : '');
     row.appendChild(name);
 
-    const val = document.createElement('span');
+    var val = document.createElement('span');
     val.classList.add('score-val');
     val.textContent = p.score;
     row.appendChild(val);
 
     board.appendChild(row);
-  });
+  }
 
   document.getElementById('roundNum').textContent = State.round;
+
+  // Turn indicator
+  var ind = document.getElementById('turnIndicator');
+  if (State.currentPlayer === 0) {
+    ind.textContent = 'Your Turn — Choose an action';
+    ind.className = 'turn-indicator';
+  } else {
+    ind.textContent = State.players[State.currentPlayer].name + "'s Turn";
+    ind.className = 'turn-indicator waiting';
+  }
 }
 
 function renderLog() {
-  const logEl = document.getElementById('gameLog');
+  var logEl = document.getElementById('gameLog');
   while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
-
-  for (const msg of State.log) {
-    const entry = document.createElement('div');
+  for (var i = 0; i < State.log.length; i++) {
+    var entry = document.createElement('div');
     entry.classList.add('log-entry');
-    entry.textContent = msg;
+    entry.textContent = State.log[i];
     logEl.appendChild(entry);
   }
 }
 
 function renderTileRef() {
-  const ref = document.getElementById('tileRef');
+  var ref = document.getElementById('tileRef');
   while (ref.firstChild) ref.removeChild(ref.firstChild);
 
-  // Colors
-  for (const c of COLORS) {
-    const item = document.createElement('div');
+  for (var i = 0; i < COLORS.length; i++) {
+    var item = document.createElement('div');
     item.classList.add('tile-ref-item');
-    const swatch = document.createElement('span');
+    var swatch = document.createElement('span');
     swatch.classList.add('tile-ref-swatch');
-    swatch.style.background = c.hex;
+    swatch.style.background = COLORS[i].hex;
     item.appendChild(swatch);
-    const label = document.createElement('span');
-    label.textContent = c.name;
-    item.appendChild(label);
+    var lbl = document.createElement('span');
+    lbl.textContent = COLORS[i].name;
+    item.appendChild(lbl);
     ref.appendChild(item);
   }
-
-  // Patterns
-  for (const p of PATTERNS) {
-    const item = document.createElement('div');
-    item.classList.add('tile-ref-item');
-    const icon = document.createElement('span');
-    icon.textContent = p.icon;
-    item.appendChild(icon);
-    const label = document.createElement('span');
-    label.textContent = p.name + ' ($' + p.cost + ')';
-    item.appendChild(label);
-    ref.appendChild(item);
+  for (var j = 0; j < PATTERNS.length; j++) {
+    var pItem = document.createElement('div');
+    pItem.classList.add('tile-ref-item');
+    var icon = document.createElement('span');
+    icon.textContent = PATTERNS[j].icon;
+    pItem.appendChild(icon);
+    var pLbl = document.createElement('span');
+    pLbl.textContent = PATTERNS[j].name + ' ($' + PATTERNS[j].cost + ')';
+    pItem.appendChild(pLbl);
+    ref.appendChild(pItem);
   }
 }
 
 function updateInfoBar() {
-  const bar = document.getElementById('infoBar');
+  var bar = document.getElementById('infoBar');
+  if (State.currentPlayer !== 0) {
+    bar.textContent = 'Waiting for ' + State.players[State.currentPlayer].name + '...';
+    return;
+  }
   if (State.selectedStorageTile !== null) {
-    const tile = State.storage[State.selectedStorageTile];
-    const validCount = getValidPlacements(tile).length;
+    var tile = State.storage[State.selectedStorageTile];
+    var valid = getValidPlacements(tile).length;
     bar.textContent = 'Selected: ' + tile.patternIcon + ' ' + tile.colorName + ' ' + tile.patternName +
-      ' (cost ' + tile.cost + '). ' + validCount + ' valid placement(s). Click a green hex to place.';
+      ' (cost ' + tile.cost + '). ' + valid + ' valid hex(es). Click a green hex.';
   } else {
-    bar.textContent = 'Select a tile from storage, then click a valid hex to place it.';
+    bar.textContent = 'Acquire tiles from display, select a tile to place, or pass.';
   }
 }
 
 function updateButtons() {
-  document.getElementById('btnPlace').disabled = State.selectedStorageTile === null;
+  var isHumanTurn = State.currentPlayer === 0 && !State.roundPassed[0];
+  document.getElementById('btnPlace').disabled = State.selectedStorageTile === null || !isHumanTurn;
+  document.getElementById('btnPass').disabled = !isHumanTurn;
+  document.getElementById('btnAcquire').disabled = !isHumanTurn;
+}
+
+function updateAcquireOptions() {
+  var typeSelect = document.getElementById('acquireType');
+  var valueSelect = document.getElementById('acquireValue');
+  var preview = document.getElementById('acquirePreview');
+
+  while (valueSelect.firstChild) valueSelect.removeChild(valueSelect.firstChild);
+
+  var type = typeSelect.value;
+  var options = type === 'color' ? COLORS : PATTERNS;
+
+  for (var i = 0; i < options.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = options[i].id;
+    opt.textContent = (options[i].icon ? options[i].icon + ' ' : '') + options[i].name;
+    valueSelect.appendChild(opt);
+  }
+
+  // Preview
+  var matches = getAcquireMatches(type, valueSelect.value);
+  preview.textContent = '→ ' + matches.tiles.length + ' tile(s), ' + matches.expansions.length + ' expansion(s)';
+}
+
+function updateBagCounter() {
+  var el = document.getElementById('bagCounter');
+  el.textContent = 'Bag: ' + State.bag.length + ' tiles | Jokers remaining: ' + State.jokerPool.length;
 }
 
 // === EVENT HANDLERS ===
 function handleStorageClick(index) {
+  if (State.currentPlayer !== 0) return;
   if (State.selectedStorageTile === index) {
-    State.selectedStorageTile = null; // deselect
+    State.selectedStorageTile = null;
   } else {
     State.selectedStorageTile = index;
   }
-  State.selectedHex = null;
   renderAll();
 }
 
 function handleHexClick(q, r) {
+  if (State.currentPlayer !== 0) return;
   if (State.selectedStorageTile === null) return;
-  const tile = State.storage[State.selectedStorageTile];
+  var tile = State.storage[State.selectedStorageTile];
   if (!tile) return;
 
   if (canPlaceTile(q, r, tile)) {
     placeTile(q, r, State.selectedStorageTile);
+    endTurn();
   }
 }
 
-// Button handlers
+// === TURN MANAGEMENT ===
+function endTurn() {
+  // Move to next non-passed player
+  var next = (State.currentPlayer + 1) % 4;
+  var loopGuard = 0;
+  while (State.roundPassed[next] && loopGuard < 4) {
+    next = (next + 1) % 4;
+    loopGuard++;
+  }
+
+  if (loopGuard >= 4) {
+    // All passed → end round
+    endRound();
+    return;
+  }
+
+  State.currentPlayer = next;
+  State.selectedStorageTile = null;
+  renderAll();
+
+  // AI turn
+  if (!State.players[State.currentPlayer].isHuman) {
+    setTimeout(function() { aiTurn(); }, 300);
+  }
+}
+
+function aiTurn() {
+  var p = State.currentPlayer;
+  // Simple AI: try to acquire the color/pattern with most tiles, else pass
+  var bestType = null, bestValue = null, bestCount = 0;
+
+  for (var ci = 0; ci < COLORS.length; ci++) {
+    var m = getAcquireMatches('color', COLORS[ci].id);
+    if (m.tiles.length > bestCount) {
+      bestCount = m.tiles.length;
+      bestType = 'color';
+      bestValue = COLORS[ci].id;
+    }
+  }
+  for (var pi = 0; pi < PATTERNS.length; pi++) {
+    var m2 = getAcquireMatches('pattern', PATTERNS[pi].id);
+    if (m2.tiles.length > bestCount) {
+      bestCount = m2.tiles.length;
+      bestType = 'pattern';
+      bestValue = PATTERNS[pi].id;
+    }
+  }
+
+  if (bestCount > 0) {
+    // Check if AI has storage space (we'll pretend they have separate storage for now)
+    addLog(State.players[p].name + ' acquires ' + bestCount + ' tiles (' + bestType + ': ' +
+      (bestType === 'color' ? COLOR_MAP[bestValue].name : PATTERN_MAP[bestValue].name) + ')');
+    // Remove the tiles from display (same as player acquire but without adding to player storage)
+    // For now, AI removes tiles from display but doesn't track their board
+    var matches = getAcquireMatches(bestType, bestValue);
+    // Remove tiles from stack
+    matches.tiles.sort(function(a, b) {
+      if (a.expIdx !== b.expIdx) return b.expIdx - a.expIdx;
+      return b.tileIdx - a.tileIdx;
+    });
+    for (var i = 0; i < matches.tiles.length; i++) {
+      var mt = matches.tiles[i];
+      State.expansionStack[mt.expIdx].tilesOnTop.splice(mt.tileIdx, 1);
+    }
+    // Check for empty expansions
+    var affected = new Set();
+    for (var j = 0; j < matches.tiles.length; j++) affected.add(matches.tiles[j].expIdx);
+    var affArr = Array.from(affected).sort(function(a, b) { return b - a; });
+    for (var k = 0; k < affArr.length; k++) {
+      var exp = State.expansionStack[affArr[k]];
+      if (exp.tilesOnTop.length === 0) {
+        exp.faceUp = true;
+        State.displayExpansions.push(exp);
+        State.expansionStack.splice(affArr[k], 1);
+      }
+    }
+  } else {
+    addLog(State.players[p].name + ' passes.');
+    State.roundPassed[p] = true;
+  }
+
+  endTurn();
+}
+
+function endRound() {
+  addLog('--- Round ' + State.round + ' ended ---');
+  State.round++;
+
+  if (State.round > 4) {
+    addLog('🏁 GAME OVER! Final scoring coming in Phase 4.');
+    renderAll();
+    return;
+  }
+
+  // Reset passes
+  State.roundPassed = [false, false, false, false];
+  State.currentPlayer = 0; // simplified: first player always starts
+
+  // Discard remaining display items
+  State.expansionStack = [];
+  State.displayExpansions = [];
+
+  // Setup next round
+  setupRoundDisplay();
+  addLog('Round ' + State.round + ' begins!');
+  renderAll();
+}
+
+// === BUTTON HANDLERS ===
 document.getElementById('btnNewGame').addEventListener('click', function() {
   initGame();
 });
 
 document.getElementById('btnPass').addEventListener('click', function() {
-  addLog('You passed.');
-  renderAll();
+  if (State.currentPlayer !== 0) return;
+  addLog('You pass.');
+  State.roundPassed[0] = true;
+  endTurn();
 });
 
 document.getElementById('btnPlace').addEventListener('click', function() {
+  // Button is informational; actual placement via hex click
   if (State.selectedStorageTile !== null) {
-    const tile = State.storage[State.selectedStorageTile];
-    const placements = getValidPlacements(tile);
-    if (placements.length > 0) {
-      updateInfoBar();
+    var tile = State.storage[State.selectedStorageTile];
+    var valid = getValidPlacements(tile);
+    if (valid.length === 0) {
+      addLog('No valid placements for this tile!');
     }
   }
 });
 
-// === START ===
+document.getElementById('btnAcquire').addEventListener('click', function() {
+  if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
+  var type = document.getElementById('acquireType').value;
+  var value = document.getElementById('acquireValue').value;
+  if (executeAcquire(type, value)) {
+    endTurn();
+  }
+});
+
+document.getElementById('acquireType').addEventListener('change', function() {
+  updateAcquireOptions();
+});
+
+document.getElementById('acquireValue').addEventListener('change', function() {
+  var type = document.getElementById('acquireType').value;
+  var value = document.getElementById('acquireValue').value;
+  var matches = getAcquireMatches(type, value);
+  document.getElementById('acquirePreview').textContent =
+    '→ ' + matches.tiles.length + ' tile(s), ' + matches.expansions.length + ' expansion(s)';
+});
+
+// === INIT ===
 initGame();
 </script>
 </body>
