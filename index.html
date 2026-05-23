@@ -269,6 +269,7 @@ main {
       <div id="infoBar" class="info-bar">Choose an action: Acquire tiles, Place a tile, or Pass.</div>
       <div class="actions" style="margin-top:6px">
         <button id="btnPlace" disabled>Place Tile</button>
+        <button id="btnPlaceExp" disabled>Place Expansion</button>
         <button id="btnPass">Pass</button>
         <button id="btnNewGame">New Game</button>
       </div>
@@ -675,22 +676,253 @@ function getValidPlacements(tile) {
   return valid;
 }
 
+// === COST PAYMENT SYSTEM (Phase 3) ===
+// Cost = pattern value. Tree=1 (free, tile itself counts), Bird=2 (need 1 extra), etc.
+// Payment tiles must share a single color OR single pattern (no mixing), no duplicates, jokers wild.
+
+function getPaymentCost(tile) {
+  if (tile.isJoker) return 0; // jokers are free to place
+  return tile.cost; // cost equals pattern value
+}
+
+function canAffordPlacement(tileIndex) {
+  var tile = State.storage[tileIndex];
+  if (!tile) return false;
+  var cost = getPaymentCost(tile);
+  if (cost <= 1) return true; // free placement (tile counts as 1)
+
+  // Need (cost - 1) additional payment tiles from storage
+  var needed = cost - 1;
+  var available = 0;
+
+  // Count tiles that could pay: share color OR pattern with placed tile, excluding the tile itself
+  for (var i = 0; i < State.storage.length; i++) {
+    if (i === tileIndex) continue;
+    var pt = State.storage[i];
+    if (pt.isJoker) { available++; continue; }
+    if (pt.color === tile.color || pt.pattern === tile.pattern) available++;
+  }
+  return available >= needed;
+}
+
+// Find valid payment combinations for a tile
+function getPaymentOptions(tileIndex) {
+  var tile = State.storage[tileIndex];
+  if (!tile) return [];
+  var cost = getPaymentCost(tile);
+  if (cost <= 1) return [[]]; // no payment needed
+
+  var needed = cost - 1;
+  // Get all potential payment tiles (share color or pattern, or joker)
+  var candidates = [];
+  for (var i = 0; i < State.storage.length; i++) {
+    if (i === tileIndex) continue;
+    var pt = State.storage[i];
+    if (pt.isJoker || pt.color === tile.color || pt.pattern === tile.pattern) {
+      candidates.push({ idx: i, tile: pt });
+    }
+  }
+
+  if (candidates.length < needed) return [];
+
+  // For simplicity: auto-select payment. Prefer tiles that share a single attribute.
+  // Strategy: prefer jokers last, prefer tiles sharing the less-useful attribute
+  // Sort: non-joker tiles sharing color first, then pattern, then jokers
+  candidates.sort(function(a, b) {
+    if (a.tile.isJoker !== b.tile.isJoker) return a.tile.isJoker ? 1 : -1;
+    return 0;
+  });
+
+  // Validate: all payment tiles must share ONE attribute (all same color, OR all same pattern)
+  // Jokers can stand in for either
+  // Try color-based payment first
+  var colorPay = tryPaymentByAttribute(candidates, tile, 'color', needed);
+  if (colorPay) return [colorPay];
+  var patternPay = tryPaymentByAttribute(candidates, tile, 'pattern', needed);
+  if (patternPay) return [patternPay];
+  // Try with jokers filling in
+  var mixedPay = tryMixedPayment(candidates, needed);
+  if (mixedPay) return [mixedPay];
+
+  return [];
+}
+
+function tryPaymentByAttribute(candidates, placedTile, attr, needed) {
+  // Find candidates sharing the specified attribute with placed tile (or jokers)
+  var matching = [];
+  var usedColors = new Set();
+  var usedPatterns = new Set();
+
+  for (var i = 0; i < candidates.length; i++) {
+    var c = candidates[i];
+    if (c.tile.isJoker) {
+      matching.push(c);
+    } else if (c.tile[attr] === placedTile[attr]) {
+      // Also ensure no duplicate tiles in payment
+      var key = c.tile.color + ':' + c.tile.pattern;
+      matching.push(c);
+    }
+  }
+
+  if (matching.length < needed) return null;
+
+  // Select first `needed` non-duplicate tiles
+  var selected = [];
+  var usedKeys = new Set();
+  for (var j = 0; j < matching.length && selected.length < needed; j++) {
+    var m = matching[j];
+    var k = m.tile.isJoker ? ('joker:' + m.idx) : (m.tile.color + ':' + m.tile.pattern);
+    if (!usedKeys.has(k) || m.tile.isJoker) {
+      usedKeys.add(k);
+      selected.push(m.idx);
+    }
+  }
+
+  return selected.length >= needed ? selected : null;
+}
+
+function tryMixedPayment(candidates, needed) {
+  // Just use first `needed` candidates (jokers + others)
+  if (candidates.length < needed) return null;
+  var result = [];
+  for (var i = 0; i < needed && i < candidates.length; i++) {
+    result.push(candidates[i].idx);
+  }
+  return result.length >= needed ? result : null;
+}
+
 // === PLACE TILE ===
 function placeTile(q, r, tileIndex) {
   var tile = State.storage[tileIndex];
   if (!tile) return false;
   if (!canPlaceTile(q, r, tile)) return false;
 
+  var cost = getPaymentCost(tile);
+  var paymentIndices = [];
+
+  if (cost > 1) {
+    var options = getPaymentOptions(tileIndex);
+    if (options.length === 0) {
+      addLog('Cannot afford to place this tile! Need ' + (cost - 1) + ' payment tile(s).');
+      return false;
+    }
+    paymentIndices = options[0]; // auto-select first valid payment
+  }
+
+  // Place the tile
   var cell = State.garden.get(hexKey(q, r));
   cell.tile = tile;
-  State.storage.splice(tileIndex, 1);
+
+  // Remove payment tiles + placed tile (sort indices descending to avoid shift issues)
+  var toRemove = [tileIndex].concat(paymentIndices);
+  toRemove.sort(function(a, b) { return b - a; });
+  for (var i = 0; i < toRemove.length; i++) {
+    State.storage.splice(toRemove[i], 1);
+  }
+
+  var payMsg = cost > 1 ? ' (paid ' + paymentIndices.length + ' tile(s))' : '';
+  addLog('Placed ' + tile.patternIcon + ' ' + tile.colorName + ' ' + tile.patternName + ' at (' + q + ',' + r + ')' + payMsg);
 
   checkFeatureSurrounded(q, r);
-  addLog('Placed ' + tile.patternIcon + ' ' + tile.colorName + ' ' + tile.patternName + ' at (' + q + ',' + r + ')');
   State.selectedStorageTile = null;
   State.selectedHex = null;
   renderAll();
   return true;
+}
+
+// === EXPANSION PLACEMENT (Phase 3) ===
+function placeExpansion(expIndex) {
+  if (expIndex >= State.expansionStorage.length) return false;
+  var exp = State.expansionStorage[expIndex];
+
+  // Find valid attachment points - expansion must connect to existing garden
+  // For simplicity: add 7 new hexes around the garden edge
+  // In real game: expansion is a specific 7-hex shape with pavilion center
+  // We'll approximate by finding a cluster of empty spaces adjacent to the garden
+
+  var edgeHexes = findExpansionAttachPoints();
+  if (edgeHexes.length === 0) {
+    addLog('No valid spots to attach this expansion!');
+    return false;
+  }
+
+  // Auto-place at best spot (first valid cluster of 7)
+  var cluster = edgeHexes.slice(0, 7);
+
+  // Add new hexes to garden
+  for (var i = 0; i < cluster.length; i++) {
+    var h = cluster[i];
+    if (!State.garden.has(hexKey(h.q, h.r))) {
+      State.garden.set(hexKey(h.q, h.r), {
+        q: h.q, r: h.r, tile: null,
+        feature: i === 0 ? 'pavilion' : null // first hex is pavilion center
+      });
+    }
+  }
+
+  State.expansionStorage.splice(expIndex, 1);
+  addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + ' (+7 hexes)');
+  renderAll();
+  return true;
+}
+
+function findExpansionAttachPoints() {
+  // Find hexes adjacent to garden that aren't in the garden yet
+  var candidates = new Map();
+  State.garden.forEach(function(cell) {
+    var nbrs = hexNeighbors(cell.q, cell.r);
+    for (var i = 0; i < nbrs.length; i++) {
+      var n = nbrs[i];
+      var key = hexKey(n.q, n.r);
+      if (!State.garden.has(key) && !candidates.has(key)) {
+        candidates.set(key, { q: n.q, r: n.r, adjacentCount: 1 });
+      } else if (candidates.has(key)) {
+        candidates.get(key).adjacentCount++;
+      }
+    }
+  });
+
+  // Sort by adjacency (prefer spots that touch more existing hexes)
+  var result = [];
+  candidates.forEach(function(v) { result.push(v); });
+  result.sort(function(a, b) { return b.adjacentCount - a.adjacentCount; });
+
+  // Now grow a cluster: start from best candidate, add neighbors
+  if (result.length === 0) return [];
+  var cluster = [result[0]];
+  var used = new Set([hexKey(result[0].q, result[0].r)]);
+
+  for (var i = 1; i < result.length && cluster.length < 7; i++) {
+    var c = result[i];
+    // Check if this candidate is adjacent to any existing cluster member
+    var adjToCluster = false;
+    for (var j = 0; j < cluster.length; j++) {
+      var dx = Math.abs(c.q - cluster[j].q);
+      var dy = Math.abs(c.r - cluster[j].r);
+      var ds = Math.abs((-c.q - c.r) - (-cluster[j].q - cluster[j].r));
+      if ((dx + dy + ds) / 2 <= 1) { adjToCluster = true; break; }
+    }
+    if (adjToCluster && !used.has(hexKey(c.q, c.r))) {
+      cluster.push(c);
+      used.add(hexKey(c.q, c.r));
+    }
+  }
+
+  // If cluster < 7, expand by adding neighbors of cluster members
+  if (cluster.length < 7) {
+    for (var k = 0; k < cluster.length && cluster.length < 7; k++) {
+      var nbs = hexNeighbors(cluster[k].q, cluster[k].r);
+      for (var m = 0; m < nbs.length && cluster.length < 7; m++) {
+        var nKey = hexKey(nbs[m].q, nbs[m].r);
+        if (!State.garden.has(nKey) && !used.has(nKey)) {
+          cluster.push({ q: nbs[m].q, r: nbs[m].r });
+          used.add(nKey);
+        }
+      }
+    }
+  }
+
+  return cluster;
 }
 
 function checkFeatureSurrounded(pq, pr) {
@@ -1037,8 +1269,11 @@ function updateInfoBar() {
   if (State.selectedStorageTile !== null) {
     var tile = State.storage[State.selectedStorageTile];
     var valid = getValidPlacements(tile).length;
+    var cost = getPaymentCost(tile);
+    var affordable = canAffordPlacement(State.selectedStorageTile);
+    var costMsg = cost <= 1 ? 'free' : 'costs ' + (cost - 1) + ' payment tile(s)';
     bar.textContent = 'Selected: ' + tile.patternIcon + ' ' + tile.colorName + ' ' + tile.patternName +
-      ' (cost ' + tile.cost + '). ' + valid + ' valid hex(es). Click a green hex.';
+      ' (' + costMsg + (affordable ? '' : ' — CANNOT AFFORD') + '). ' + valid + ' valid hex(es).';
   } else {
     bar.textContent = 'Acquire tiles from display, select a tile to place, or pass.';
   }
@@ -1046,7 +1281,9 @@ function updateInfoBar() {
 
 function updateButtons() {
   var isHumanTurn = State.currentPlayer === 0 && !State.roundPassed[0];
-  document.getElementById('btnPlace').disabled = State.selectedStorageTile === null || !isHumanTurn;
+  var canPlace = State.selectedStorageTile !== null && isHumanTurn && canAffordPlacement(State.selectedStorageTile);
+  document.getElementById('btnPlace').disabled = !canPlace;
+  document.getElementById('btnPlaceExp').disabled = !isHumanTurn || State.expansionStorage.length === 0;
   document.getElementById('btnPass').disabled = !isHumanTurn;
   document.getElementById('btnAcquire').disabled = !isHumanTurn;
 }
@@ -1094,6 +1331,11 @@ function handleHexClick(q, r) {
   if (State.selectedStorageTile === null) return;
   var tile = State.storage[State.selectedStorageTile];
   if (!tile) return;
+
+  if (!canAffordPlacement(State.selectedStorageTile)) {
+    addLog('Cannot afford this tile! Need payment tiles sharing color or pattern.');
+    return;
+  }
 
   if (canPlaceTile(q, r, tile)) {
     placeTile(q, r, State.selectedStorageTile);
@@ -1219,6 +1461,15 @@ document.getElementById('btnPass').addEventListener('click', function() {
   addLog('You pass.');
   State.roundPassed[0] = true;
   endTurn();
+});
+
+document.getElementById('btnPlaceExp').addEventListener('click', function() {
+  if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
+  if (State.expansionStorage.length > 0) {
+    if (placeExpansion(0)) {
+      endTurn();
+    }
+  }
 });
 
 document.getElementById('btnPlace').addEventListener('click', function() {
