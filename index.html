@@ -1114,6 +1114,11 @@ function cancelPaymentMode() {
 
 function togglePaymentTile(source, idx) {
   if (!State.paymentMode) return;
+  // Expansion pieces cannot be used as payment tiles
+  if (source === 'expansion') {
+    addLog('Expansion pieces cannot be used as payment — only tiles from storage.');
+    return;
+  }
   // Check if already selected — toggle off
   for (var i = 0; i < State.paymentSelected.length; i++) {
     if (State.paymentSelected[i].source === source && State.paymentSelected[i].idx === idx) {
@@ -1123,7 +1128,7 @@ function togglePaymentTile(source, idx) {
     }
   }
   // Validate this tile can pay
-  var tile = source === 'storage' ? State.storage[idx] : State.expansionStorage[idx];
+  var tile = State.storage[idx];
   if (!tile) return;
   if (!isValidPayment(tile, State.paymentTargetTile)) {
     addLog('That tile doesn\'t match — must share color or pattern with the placed tile.');
@@ -1242,10 +1247,11 @@ function placeTile(q, r, tileIndex) {
 //   2. ALL 6 neighbors of (q, r) are NOT in the garden (full 7-hex flower is free)
 //   3. At least one of the 7 hexes has a neighbor that IS in the garden (touches existing garden)
 // Find available expansion slot centers (canonical positions not yet used)
-function findValidExpansionCenters() {
+function findValidExpansionCenters(usedSlots) {
+  if (!usedSlots) usedSlots = State.usedExpansionSlots;
   var validCenters = [];
   for (var i = 0; i < EXPANSION_SLOT_CENTERS.length; i++) {
-    if (State.usedExpansionSlots.indexOf(i) === -1) {
+    if (usedSlots.indexOf(i) === -1) {
       validCenters.push({
         q: EXPANSION_SLOT_CENTERS[i].q,
         r: EXPANSION_SLOT_CENTERS[i].r,
@@ -1459,83 +1465,7 @@ function confirmExpansionTilePlacement(q, r) {
   } catch (e) { showError(e.message, e.stack, 'confirmExpansionTilePlacement(q=' + q + ',r=' + r + ')'); return false; }
 }
 
-// AI expansion placement: find best valid center and place full 7-hex flower
-function placeExpansion(expIndex) {
-  if (expIndex >= State.expansionStorage.length) return false;
-  var exp = State.expansionStorage[expIndex];
-
-  // Check cost
-  var cost = getExpansionCost(exp);
-  if (cost > 1) {
-    var paymentIndices = getExpansionPayment(exp);
-    if (!paymentIndices) return false; // Can't afford
-    paymentIndices.sort(function(a, b) { return b - a; });
-    for (var p = 0; p < paymentIndices.length; p++) {
-      State.storage.splice(paymentIndices[p], 1);
-    }
-  }
-
-  var centers = findValidExpansionCenters();
-  if (centers.length === 0) return false;
-
-  // Pick center that maximizes adjacency with existing garden (most shared edges = best for scoring)
-  var bestCenter = centers[0];
-  var bestAdj = 0;
-  for (var i = 0; i < centers.length; i++) {
-    var c = centers[i];
-    var adj = 0;
-    var flowerHexes = [c].concat(hexNeighbors(c.q, c.r));
-    for (var f = 0; f < flowerHexes.length; f++) {
-      var fNbrs = hexNeighbors(flowerHexes[f].q, flowerHexes[f].r);
-      for (var fn = 0; fn < fNbrs.length; fn++) {
-        if (State.garden.has(hexKey(fNbrs[fn].q, fNbrs[fn].r))) {
-          adj++;
-        }
-      }
-    }
-    if (adj > bestAdj) {
-      bestAdj = adj;
-      bestCenter = c;
-    }
-  }
-
-  // Place the full 7-hex flower
-  var cluster = [{ q: bestCenter.q, r: bestCenter.r, feature: 'pavilion' }];
-  var nbrs = hexNeighbors(bestCenter.q, bestCenter.r);
-  for (var n = 0; n < nbrs.length; n++) {
-    cluster.push({ q: nbrs[n].q, r: nbrs[n].r, feature: null });
-  }
-  for (var j = 0; j < cluster.length; j++) {
-    var h = cluster[j];
-    State.garden.set(hexKey(h.q, h.r), {
-      q: h.q, r: h.r, tile: null, feature: h.feature
-    });
-  }
-
-  // Mark the canonical slot as used
-  if (bestCenter.slotIndex !== undefined) {
-    if (State.usedExpansionSlots.indexOf(bestCenter.slotIndex) === -1) {
-      State.usedExpansionSlots.push(bestCenter.slotIndex);
-    }
-  }
-
-  // Place expansion tile on a random outer hex
-  var expTile = {
-    id: 2000 + exp.id,
-    color: exp.color, colorName: exp.colorName, colorHex: exp.colorHex,
-    pattern: exp.pattern, patternName: exp.patternName, patternIcon: exp.patternIcon,
-    cost: cost, isJoker: false
-  };
-  var outerIdx = Math.floor(Math.random() * nbrs.length);
-  var outerKey = hexKey(nbrs[outerIdx].q, nbrs[outerIdx].r);
-  State.garden.get(outerKey).tile = expTile;
-
-  State.expansionStorage.splice(expIndex, 1);
-  var payMsg = cost > 1 ? ' (paid ' + (cost - 1) + ' tile(s))' : '';
-  addLog('Placed expansion: ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + ' (+7 hexes, tile placed)' + payMsg);
-  renderAll();
-  return true;
-}
+// (placeExpansion removed — dead code; AI uses expandAiGarden instead)
 
 function checkFeatureSurrounded(pq, pr) {
   var toCheck = [{ q: pq, r: pr }].concat(hexNeighbors(pq, pr));
@@ -1982,8 +1912,13 @@ function renderGarden() {
       candidateSet.add(hexKey(State.expansionCandidates[eci].q, State.expansionCandidates[eci].r));
     }
   }
+  // Determine which used expansion slots apply for the viewed garden
+  var viewedUsedSlots = State.usedExpansionSlots;
+  if (viewingGarden > 0 && State.players[viewingGarden] && State.players[viewingGarden].aiUsedExpansionSlots) {
+    viewedUsedSlots = State.players[viewingGarden].aiUsedExpansionSlots;
+  }
   for (var si = 0; si < EXPANSION_SLOT_CENTERS.length; si++) {
-    if (State.usedExpansionSlots.indexOf(si) !== -1) continue; // Already placed
+    if (viewedUsedSlots.indexOf(si) !== -1) continue; // Already placed
     var center = EXPANSION_SLOT_CENTERS[si];
     var isCandidate = candidateSet.has(hexKey(center.q, center.r));
     var slotCells = getExpansionSlotCells(center.q, center.r);
@@ -2229,16 +2164,8 @@ function renderStorage() {
       freshSlot.id = 'expSlot' + e;
 
       if (State.paymentMode) {
-        var expEligible = isValidPayment(exp, State.paymentTargetTile);
-        if (isPaymentSelected('expansion', e)) {
-          freshSlot.style.outline = '3px solid #ff6b6b';
-          freshSlot.style.background = '#2d1a1a';
-        } else if (expEligible) {
-          freshSlot.style.outline = '2px dashed #ffd700';
-          freshSlot.style.cursor = 'pointer';
-        } else {
-          freshSlot.style.opacity = '0.35';
-        }
+        // Expansion pieces cannot be used as payment — dim them out
+        freshSlot.style.opacity = '0.35';
       }
 
       (function(slotIdx) {
@@ -2619,8 +2546,9 @@ function handleHexClick(q, r) {
   }
 
   if (canPlaceTile(q, r, tile)) {
-    placeTile(q, r, State.selectedStorageTile);
-    endTurn();
+    if (placeTile(q, r, State.selectedStorageTile)) {
+      endTurn();
+    }
   }
   } catch (e) { showError(e.message, e.stack, 'handleHexClick(q=' + q + ',r=' + r + ')'); }
 }
@@ -2791,6 +2719,7 @@ function initAiGarden(playerIdx) {
     }
   }
   State.players[playerIdx].aiExpStorage = [];
+  State.players[playerIdx].aiUsedExpansionSlots = [];
 }
 
 function canAiAffordExpansion(exp, storage) {
@@ -2835,8 +2764,9 @@ function expandAiGarden(playerIdx, garden, aiExp, aiStorage) {
     payAiExpansionCost(aiExp, aiStorage);
   }
 
-  // Use the same valid center logic as the player
-  var centers = findValidExpansionCenters();
+  // Use the same valid center logic as the player, but with AI's own used slots
+  var aiUsedSlots = State.players[playerIdx].aiUsedExpansionSlots || [];
+  var centers = findValidExpansionCenters(aiUsedSlots);
   if (centers.length === 0) return;
 
   // Pick center with most adjacency to existing garden
@@ -2871,10 +2801,10 @@ function expandAiGarden(playerIdx, garden, aiExp, aiStorage) {
     });
   }
 
-  // Mark the canonical slot as used
+  // Mark the canonical slot as used for THIS AI player
   if (bestCenter.slotIndex !== undefined) {
-    if (State.usedExpansionSlots.indexOf(bestCenter.slotIndex) === -1) {
-      State.usedExpansionSlots.push(bestCenter.slotIndex);
+    if (aiUsedSlots.indexOf(bestCenter.slotIndex) === -1) {
+      aiUsedSlots.push(bestCenter.slotIndex);
     }
   }
 
@@ -2916,8 +2846,9 @@ function decideAiAction(playerIdx, storage, expStorage, garden) {
     if (placeAction) return placeAction;
   }
 
-  // If has expansion and garden is small, place expansion (if affordable)
-  if (expStorage.length > 0 && countGardenSize(garden) < 25 && canAiAffordExpansion(expStorage[0], storage)) {
+  // If has expansion and garden is small, place expansion (if affordable and slots available)
+  var aiSlots = State.players[playerIdx].aiUsedExpansionSlots || [];
+  if (expStorage.length > 0 && countGardenSize(garden) < 25 && canAiAffordExpansion(expStorage[0], storage) && findValidExpansionCenters(aiSlots).length > 0) {
     return { type: 'placeExp' };
   }
 
@@ -2942,8 +2873,8 @@ function decideAiAction(playerIdx, storage, expStorage, garden) {
     if (fallbackPlace) return fallbackPlace;
   }
 
-  // Place expansion if available and affordable
-  if (expStorage.length > 0 && canAiAffordExpansion(expStorage[0], storage)) {
+  // Place expansion if available, affordable, and slots available
+  if (expStorage.length > 0 && canAiAffordExpansion(expStorage[0], storage) && findValidExpansionCenters(aiSlots).length > 0) {
     return { type: 'placeExp' };
   }
 
