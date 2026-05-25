@@ -699,6 +699,7 @@ var State = {
   log: [],
   phase: 'acquire', // acquire | place | pass | roundEnd
   placingExpansion: false,
+  selectedExpansionIndex: 0,  // which expansion in storage is being placed
   expansionTilePlacing: false,
   expansionTileOptions: [],
   expansionTile: null,
@@ -725,6 +726,7 @@ function initGame() {
   State.selectedStorageTile = null;
   State.selectedHex = null;
   State.placingExpansion = false;
+  State.selectedExpansionIndex = 0;
   State.expansionCandidates = [];
   State.expansionTilePlacing = false;
   State.expansionTileOptions = [];
@@ -1254,13 +1256,14 @@ function findValidExpansionCenters() {
   return validCenters;
 }
 
-function enterExpansionPlacementMode() {
-  if (State.expansionStorage.length === 0) {
-    addLog('No expansions in storage!');
+function enterExpansionPlacementMode(slotIndex) {
+  if (typeof slotIndex !== 'number') slotIndex = 0;
+  if (slotIndex >= State.expansionStorage.length) {
+    addLog('No expansion in that slot!');
     return;
   }
-  if (!canAffordExpansion()) {
-    var exp = State.expansionStorage[0];
+  if (!canAffordExpansion(slotIndex)) {
+    var exp = State.expansionStorage[slotIndex];
     var cost = getExpansionCost(exp);
     addLog('Cannot afford to place ' + exp.patternIcon + ' ' + exp.colorName + ' ' + exp.patternName + '! Need ' + (cost - 1) + ' matching payment tile(s).');
     return;
@@ -1274,6 +1277,7 @@ function enterExpansionPlacementMode() {
   }
 
   State.placingExpansion = true;
+  State.selectedExpansionIndex = slotIndex;
   State.expansionCandidates = candidates;
   State.selectedStorageTile = null;
   addLog('Click a highlighted hex to place expansion center (pavilion). Click Cancel to abort.');
@@ -1282,6 +1286,7 @@ function enterExpansionPlacementMode() {
 
 function cancelExpansionPlacement() {
   State.placingExpansion = false;
+  State.selectedExpansionIndex = 0;
   State.expansionCandidates = [];
   State.expansionTilePlacing = false;
   State.expansionTileOptions = [];
@@ -1293,9 +1298,10 @@ function getExpansionCost(exp) {
   return PATTERN_MAP[exp.pattern] ? PATTERN_MAP[exp.pattern].cost : 0;
 }
 
-function canAffordExpansion() {
-  if (State.expansionStorage.length === 0) return false;
-  var exp = State.expansionStorage[0];
+function canAffordExpansion(slotIndex) {
+  if (typeof slotIndex !== 'number') slotIndex = 0;
+  if (slotIndex >= State.expansionStorage.length) return false;
+  var exp = State.expansionStorage[slotIndex];
   var cost = getExpansionCost(exp);
   if (cost <= 1) return true;
   var needed = cost - 1;
@@ -1331,8 +1337,9 @@ function getExpansionPayment(exp) {
 
 function confirmExpansionPlacement(q, r) {
   try {
-  if (State.expansionStorage.length === 0) return false;
-  var exp = State.expansionStorage[0];
+  var expIdx = State.selectedExpansionIndex || 0;
+  if (expIdx >= State.expansionStorage.length) return false;
+  var exp = State.expansionStorage[expIdx];
 
   var cost = getExpansionCost(exp);
 
@@ -2243,7 +2250,7 @@ function renderStorage() {
             if (State.placingExpansion) {
               cancelExpansionPlacement();
             } else {
-              enterExpansionPlacementMode();
+              enterExpansionPlacementMode(slotIdx);
             }
           }
         });
@@ -2373,7 +2380,7 @@ function updateButtons() {
   var canPlace = State.selectedStorageTile !== null && isHumanTurn && !inExpTileMode && canAffordPlacement(State.selectedStorageTile);
   document.getElementById('btnPlace').disabled = !canPlace;
   var expBtn = document.getElementById('btnPlaceExp');
-  var canExp = isHumanTurn && !inExpTileMode && (State.expansionStorage.length > 0 || State.placingExpansion) && (State.placingExpansion || canAffordExpansion());
+  var canExp = isHumanTurn && !inExpTileMode && (State.expansionStorage.length > 0 || State.placingExpansion) && (State.placingExpansion || canAffordExpansion(0) || canAffordExpansion(1));
   expBtn.disabled = !canExp;
   expBtn.textContent = State.placingExpansion ? 'Cancel Expansion' : 'Place Expansion';
   document.getElementById('btnPass').disabled = !isHumanTurn || inExpTileMode;
@@ -3160,8 +3167,10 @@ document.getElementById('btnPlaceExp').addEventListener('click', function() {
     cancelExpansionPlacement();
     return;
   }
-  if (State.expansionStorage.length > 0 && canAffordExpansion()) {
-    enterExpansionPlacementMode();
+  if (State.expansionStorage.length > 0 && (canAffordExpansion(0) || canAffordExpansion(1))) {
+    // Pick the first affordable expansion
+    var idx = canAffordExpansion(0) ? 0 : 1;
+    enterExpansionPlacementMode(idx);
   } else if (State.expansionStorage.length > 0) {
     addLog('Cannot afford to place this expansion!');
   }
