@@ -204,6 +204,8 @@ main {
 .hex-cell.occupied { cursor: default; }
 .hex-cell.valid-target { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 2; fill: #e8f5e9; }
 .hex-cell.fountain { fill: #e3f2fd; stroke: var(--light-blue); }
+.hex-cell.bench { fill: #f3e5f5; stroke: #ce93d8; }
+.hex-cell.gazebo { fill: #e3f2fd; stroke: var(--light-blue); }
 .hex-pattern { pointer-events: none; font-size: 11px; fill: white; text-anchor: middle; dominant-baseline: central; font-weight: bold; }
 /* Sidebar */
 .sidebar { display: flex; flex-direction: column; gap: 12px; }
@@ -571,7 +573,7 @@ function shuffle(arr) {
 }
 
 // === EXPANSION FACTORY ===
-// Each expansion: 7-hex piece with a pavilion center and one hex having a specific color+pattern combo
+// Each expansion: 7-hex piece with a gazebo center and one hex having a specific color+pattern combo
 function createExpansions() {
   var expansions = [];
   var id = 0;
@@ -672,7 +674,7 @@ function createFountainLayout() {
   }
   var ring2 = [{q:2,r:-1},{q:1,r:1},{q:-1,r:2},{q:-2,r:1},{q:-1,r:-1},{q:1,r:-2}];
   for (var j = 0; j < ring2.length; j++) {
-    cells.push({ q: ring2[j].q, r: ring2[j].r, feature: null });
+    cells.push({ q: ring2[j].q, r: ring2[j].r, feature: 'bench' });
   }
   return cells;
 }
@@ -718,6 +720,7 @@ var State = {
 };
 
 function initGame() {
+  viewingGarden = 0; // Reset to player's garden view
   State.bag = shuffle(createAllTiles());
   State.jokerPool = createJokers();
   State.allExpansions = createExpansions();
@@ -1286,7 +1289,7 @@ function enterExpansionPlacementMode(slotIndex) {
   State.selectedExpansionIndex = slotIndex;
   State.expansionCandidates = candidates;
   State.selectedStorageTile = null;
-  addLog('Click a highlighted hex to place expansion center (pavilion). Click Cancel to abort.');
+  addLog('Click a highlighted hex to place expansion center (gazebo). Click Cancel to abort.');
   renderAll();
 }
 
@@ -1367,7 +1370,7 @@ function confirmExpansionPlacement(q, r) {
     }
 
     // Place the full 7-hex flower
-    var cluster = [{ q: q, r: r, feature: 'pavilion' }];
+    var cluster = [{ q: q, r: r, feature: 'gazebo' }];
     var nbrs = hexNeighbors(q, r);
     for (var i = 0; i < nbrs.length; i++) {
       cluster.push({ q: nbrs[i].q, r: nbrs[i].r, feature: null });
@@ -1537,16 +1540,15 @@ function countMatchingHexes(garden, attr) {
   return count;
 }
 
-function countVisiblePavilions(garden) {
-  var count = 0;
+function scoreFeatures(garden) {
+  var total = 0;
+  var counts = { fountain: 0, bench: 0, gazebo: 0 };
   garden.forEach(function(cell) {
-    if (cell.feature === 'pavilion' || cell.feature === 'fountain') {
-      // Visible = not covered by a tile? Actually in the game, pavilions are always visible
-      // They're the center of expansions and always count
-      count++;
-    }
+    if (cell.feature === 'fountain') { total += 1; counts.fountain++; }
+    else if (cell.feature === 'bench') { total += 2; counts.bench++; }
+    else if (cell.feature === 'gazebo') { total += 3; counts.gazebo++; }
   });
-  return count;
+  return { total: total, counts: counts };
 }
 
 function scoreEndOfRound(garden) {
@@ -1563,10 +1565,14 @@ function scoreEndOfRound(garden) {
     details.push(attrs[i].name + ': ' + matchCount + '×' + points[i] + '=' + earned);
   }
 
-  // 1 pt per visible pavilion/fountain
-  var pavilions = countVisiblePavilions(garden);
-  totalScore += pavilions;
-  if (pavilions > 0) details.push('Pavilions: ' + pavilions + '×1=' + pavilions);
+  // Feature scoring: fountain=1pt, bench=2pt, gazebo=3pt
+  var feat = scoreFeatures(garden);
+  totalScore += feat.total;
+  var featParts = [];
+  if (feat.counts.fountain > 0) featParts.push('⛲×' + feat.counts.fountain + '=' + feat.counts.fountain);
+  if (feat.counts.bench > 0) featParts.push('🪑×' + feat.counts.bench + '=' + (feat.counts.bench * 2));
+  if (feat.counts.gazebo > 0) featParts.push('🏛️×' + feat.counts.gazebo + '=' + (feat.counts.gazebo * 3));
+  if (featParts.length > 0) details.push('Features: ' + featParts.join(', '));
 
   return { total: totalScore, details: details };
 }
@@ -1731,11 +1737,11 @@ function renderScoringWheel() {
     el.appendChild(row);
   }
 
-  // Show pavilion bonus
+  // Show feature bonus
   var pavRow = document.createElement('div');
   pavRow.style.padding = '3px 0';
   pavRow.style.color = 'var(--text-muted)';
-  pavRow.textContent = '🏛️ + 1 pt per visible pavilion/fountain';
+  pavRow.textContent = '⛲ 1pt · 🪑 2pts · 🏛️ 3pts per feature';
   el.appendChild(pavRow);
 }
 
@@ -1943,13 +1949,13 @@ function renderGarden() {
         })(center.q, center.r);
       } else {
         // Faint outline showing available slot
-        spoly.style.fill = 'rgba(200, 200, 200, 0.08)';
-        spoly.style.stroke = 'rgba(150, 150, 150, 0.25)';
+        spoly.style.fill = 'rgba(200, 200, 200, 0.15)';
+        spoly.style.stroke = 'rgba(120, 120, 120, 0.5)';
         spoly.style.strokeWidth = '1';
         spoly.style.strokeDasharray = '3 3';
       }
       sg.appendChild(spoly);
-      // Show pavilion icon on center hex of each slot
+      // Show gazebo icon on center hex of each slot
       if (sc === 0 && isCandidate) {
         var stxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         stxt.setAttribute('x', scx);
@@ -1964,6 +1970,16 @@ function renderGarden() {
     }
   }
 
+  // SVG pattern icons for better rendering
+  var SVG_PATTERNS = {
+    tree: function(cx, cy) { return 'M' + cx + ',' + (cy-8) + ' L' + (cx-5) + ',' + (cy+2) + ' L' + (cx-2) + ',' + (cy+2) + ' L' + (cx-2) + ',' + (cy+6) + ' L' + (cx+2) + ',' + (cy+6) + ' L' + (cx+2) + ',' + (cy+2) + ' L' + (cx+5) + ',' + (cy+2) + ' Z'; },
+    bird: function(cx, cy) { return 'M' + (cx-6) + ',' + (cy+2) + ' Q' + (cx-3) + ',' + (cy-5) + ' ' + cx + ',' + (cy-2) + ' Q' + (cx+3) + ',' + (cy-5) + ' ' + (cx+6) + ',' + (cy+2); },
+    butterfly: function(cx, cy) { return 'M' + cx + ',' + (cy-6) + ' Q' + (cx-6) + ',' + (cy-3) + ' ' + (cx-5) + ',' + cy + ' Q' + (cx-6) + ',' + (cy+3) + ' ' + cx + ',' + (cy+6) + ' Q' + (cx+6) + ',' + (cy+3) + ' ' + (cx+5) + ',' + cy + ' Q' + (cx+6) + ',' + (cy-3) + ' ' + cx + ',' + (cy-6); },
+    flower: function(cx, cy) { var d = ''; for (var i = 0; i < 5; i++) { var a = (i * 72 - 90) * Math.PI / 180; d += (i ? 'L' : 'M') + (cx + 6 * Math.cos(a)) + ',' + (cy + 6 * Math.sin(a)); } return d + 'Z'; },
+    grass: function(cx, cy) { return 'M' + (cx-4) + ',' + (cy+5) + ' L' + (cx-3) + ',' + (cy-5) + ' M' + cx + ',' + (cy+5) + ' L' + cx + ',' + (cy-7) + ' M' + (cx+4) + ',' + (cy+5) + ' L' + (cx+3) + ',' + (cy-5); },
+    tulip: function(cx, cy) { return 'M' + cx + ',' + (cy-7) + ' Q' + (cx-6) + ',' + (cy-2) + ' ' + (cx-4) + ',' + (cy+1) + ' L' + cx + ',' + (cy-1) + ' L' + (cx+4) + ',' + (cy+1) + ' Q' + (cx+6) + ',' + (cy-2) + ' ' + cx + ',' + (cy-7) + ' M' + cx + ',' + (cy-1) + ' L' + cx + ',' + (cy+7); }
+  };
+
   garden.forEach(function(cell) {
     var p = hexToPixel(cell.q, cell.r, HEX_SIZE);
     var cx = p.x + offX;
@@ -1974,23 +1990,13 @@ function renderGarden() {
     poly.setAttribute('points', hexPoints(cx, cy, HEX_SIZE - 1));
     poly.classList.add('hex-cell');
 
-// SVG pattern icons for better rendering
-var SVG_PATTERNS = {
-  tree: function(cx, cy) { return 'M' + cx + ',' + (cy-8) + ' L' + (cx-5) + ',' + (cy+2) + ' L' + (cx-2) + ',' + (cy+2) + ' L' + (cx-2) + ',' + (cy+6) + ' L' + (cx+2) + ',' + (cy+6) + ' L' + (cx+2) + ',' + (cy+2) + ' L' + (cx+5) + ',' + (cy+2) + ' Z'; },
-  bird: function(cx, cy) { return 'M' + (cx-6) + ',' + (cy+2) + ' Q' + (cx-3) + ',' + (cy-5) + ' ' + cx + ',' + (cy-2) + ' Q' + (cx+3) + ',' + (cy-5) + ' ' + (cx+6) + ',' + (cy+2); },
-  butterfly: function(cx, cy) { return 'M' + cx + ',' + (cy-6) + ' Q' + (cx-6) + ',' + (cy-3) + ' ' + (cx-5) + ',' + cy + ' Q' + (cx-6) + ',' + (cy+3) + ' ' + cx + ',' + (cy+6) + ' Q' + (cx+6) + ',' + (cy+3) + ' ' + (cx+5) + ',' + cy + ' Q' + (cx+6) + ',' + (cy-3) + ' ' + cx + ',' + (cy-6); },
-  flower: function(cx, cy) { var d = ''; for (var i = 0; i < 5; i++) { var a = (i * 72 - 90) * Math.PI / 180; d += (i ? 'L' : 'M') + (cx + 6 * Math.cos(a)) + ',' + (cy + 6 * Math.sin(a)); } return d + 'Z'; },
-  grass: function(cx, cy) { return 'M' + (cx-4) + ',' + (cy+5) + ' L' + (cx-3) + ',' + (cy-5) + ' M' + cx + ',' + (cy+5) + ' L' + cx + ',' + (cy-7) + ' M' + (cx+4) + ',' + (cy+5) + ' L' + (cx+3) + ',' + (cy-5); },
-  tulip: function(cx, cy) { return 'M' + cx + ',' + (cy-7) + ' Q' + (cx-6) + ',' + (cy-2) + ' ' + (cx-4) + ',' + (cy+1) + ' L' + cx + ',' + (cy-1) + ' L' + (cx+4) + ',' + (cy+1) + ' Q' + (cx+6) + ',' + (cy-2) + ' ' + cx + ',' + (cy-7) + ' M' + cx + ',' + (cy-1) + ' L' + cx + ',' + (cy+7); }
-};
-
     if (cell.tile) {
       poly.classList.add('occupied');
       poly.style.fill = cell.tile.colorHex;
       poly.style.stroke = '#fff';
       poly.style.strokeWidth = '2';
     } else if (cell.feature) {
-      poly.classList.add('fountain');
+      poly.classList.add(cell.feature);
     }
 
     if (State.expansionTilePlacing) {
@@ -2055,7 +2061,7 @@ var SVG_PATTERNS = {
       ftxt.classList.add('hex-pattern');
       ftxt.style.fill = '#64B5F6';
       ftxt.style.fontSize = '14px';
-      ftxt.textContent = cell.feature === 'fountain' ? '⛲' : '🏛️';
+      ftxt.textContent = cell.feature === 'fountain' ? '⛲' : cell.feature === 'bench' ? '🪑' : '🏛️';
       g.appendChild(ftxt);
     }
 
@@ -2174,6 +2180,7 @@ function renderStorage() {
             togglePaymentTile('expansion', slotIdx);
           } else {
             if (State.currentPlayer !== 0 || State.roundPassed[0]) return;
+            if (State.expansionTilePlacing) return; // Don't allow during tile placement sub-step
             if (State.placingExpansion) {
               cancelExpansionPlacement();
             } else {
@@ -2281,7 +2288,7 @@ function updateInfoBar() {
     return;
   }
   if (State.placingExpansion) {
-    bar.textContent = 'EXPANSION MODE: Click a highlighted hex to place pavilion center. Click "Place Expansion" again to cancel.';
+    bar.textContent = 'EXPANSION MODE: Click a highlighted hex to place gazebo center. Click "Place Expansion" again to cancel.';
     return;
   }
   if (State.expansionTilePlacing) {
@@ -2792,7 +2799,7 @@ function expandAiGarden(playerIdx, garden, aiExp, aiStorage) {
 
   // Place the full 7-hex flower
   garden.set(hexKey(bestCenter.q, bestCenter.r), {
-    q: bestCenter.q, r: bestCenter.r, tile: null, feature: 'pavilion'
+    q: bestCenter.q, r: bestCenter.r, tile: null, feature: 'gazebo'
   });
   var nbrs = hexNeighbors(bestCenter.q, bestCenter.r);
   for (var n = 0; n < nbrs.length; n++) {
@@ -3086,6 +3093,7 @@ document.getElementById('btnNewGame').addEventListener('click', function() {
 
 document.getElementById('btnPass').addEventListener('click', function() {
   if (State.currentPlayer !== 0) return;
+  if (State.expansionTilePlacing || State.placingExpansion || State.paymentMode) return;
   addLog('You pass.');
   State.roundPassed[0] = true;
   endTurn();
