@@ -337,7 +337,7 @@ main {
 </div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.2 — Click-first acquire</span>
+  <span class="phase-tag">v1.3 — Feature fix</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -1949,10 +1949,10 @@ function renderGarden() {
         })(center.q, center.r);
       } else {
         // Faint outline showing available slot
-        spoly.style.fill = 'rgba(200, 200, 200, 0.15)';
-        spoly.style.stroke = 'rgba(120, 120, 120, 0.5)';
-        spoly.style.strokeWidth = '1';
-        spoly.style.strokeDasharray = '3 3';
+        spoly.style.fill = 'rgba(180, 180, 180, 0.25)';
+        spoly.style.stroke = 'rgba(100, 100, 100, 0.7)';
+        spoly.style.strokeWidth = '1.5';
+        spoly.style.strokeDasharray = '4 3';
       }
       sg.appendChild(spoly);
       // Show gazebo icon on center hex of each slot
