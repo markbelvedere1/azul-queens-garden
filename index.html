@@ -337,7 +337,7 @@ main {
 </div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.3 — Feature fix</span>
+  <span class="phase-tag">v1.4 — Payment fix</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -713,6 +713,7 @@ var State = {
   paymentSelected: [],      // [{source:'storage'|'expansion', idx:number}]
   paymentTargetTile: null,  // tile being placed (for matching validation)
   paymentCallback: null,    // function(selectedIndices) called when payment confirmed
+  paymentPlacedTileIdx: null, // index of tile being placed (excluded from payment)
   // Scoring wheel (Phase 4)
   scoringWheel: [],     // 12 attributes (6 colors + 6 patterns), shuffled
   wheelPosition: 0,     // current position in the wheel
@@ -739,6 +740,7 @@ function initGame() {
   State.paymentSelected = [];
   State.paymentTargetTile = null;
   State.paymentCallback = null;
+  State.paymentPlacedTileIdx = null;
   State.log = [];
   State.phase = 'acquire';
   State.roundPassed = [false, false, false, false];
@@ -1092,6 +1094,48 @@ function isValidPayment(payTile, targetTile) {
   return payTile.color === targetTile.color || payTile.pattern === targetTile.pattern;
 }
 
+// Group-aware payment validation: checks placed-tile exclusion, duplicates, and dimension consistency
+function isValidPaymentForGroup(tile, tileIdx) {
+  if (!State.paymentMode) return false;
+  // Can't use the tile being placed as payment
+  if (tileIdx === State.paymentPlacedTileIdx) return false;
+  var targetTile = State.paymentTargetTile;
+  // Jokers are always valid payment
+  if (tile.isJoker) return true;
+  // Must share at least one attribute with placed tile
+  var sharesColor = tile.color === targetTile.color;
+  var sharesPattern = tile.pattern === targetTile.pattern;
+  if (!sharesColor && !sharesPattern) return false;
+  // Check for duplicates (same color+pattern as any already-selected tile)
+  for (var i = 0; i < State.paymentSelected.length; i++) {
+    var s = State.paymentSelected[i];
+    if (s.source !== 'storage') continue;
+    var sel = State.storage[s.idx];
+    if (!sel || sel.isJoker) continue;
+    if (sel.color === tile.color && sel.pattern === tile.pattern) return false;
+  }
+  // Determine which payment dimensions are still viable given current selections
+  var nonJokerSelected = [];
+  for (var j = 0; j < State.paymentSelected.length; j++) {
+    var s2 = State.paymentSelected[j];
+    if (s2.source !== 'storage') continue;
+    var sel2 = State.storage[s2.idx];
+    if (sel2 && !sel2.isJoker) nonJokerSelected.push(sel2);
+  }
+  if (nonJokerSelected.length === 0) return true; // first non-joker, any matching dim works
+  // Check if existing selections all share color or pattern with the target
+  var colorViable = true;
+  var patternViable = true;
+  for (var k = 0; k < nonJokerSelected.length; k++) {
+    if (nonJokerSelected[k].color !== targetTile.color) colorViable = false;
+    if (nonJokerSelected[k].pattern !== targetTile.pattern) patternViable = false;
+  }
+  // New tile must fit at least one remaining viable dimension
+  if (colorViable && sharesColor) return true;
+  if (patternViable && sharesPattern) return true;
+  return false;
+}
+
 // Enter payment selection mode. Player picks which tiles to spend.
 // targetTile: the tile/expansion being placed (has .color, .pattern)
 // needed: number of payment tiles required
@@ -1102,7 +1146,7 @@ function enterPaymentMode(targetTile, needed, callback) {
   State.paymentSelected = [];
   State.paymentTargetTile = targetTile;
   State.paymentCallback = callback;
-  addLog('SELECT ' + needed + ' payment tile(s) — click tiles in storage or expansion slots that match color or pattern.');
+  addLog('SELECT ' + needed + ' payment tile(s) — all must share the same color OR same pattern. No duplicates.');
   renderAll();
 }
 
@@ -1112,6 +1156,7 @@ function cancelPaymentMode() {
   State.paymentSelected = [];
   State.paymentTargetTile = null;
   State.paymentCallback = null;
+  State.paymentPlacedTileIdx = null;
   renderAll();
 }
 
@@ -1130,11 +1175,15 @@ function togglePaymentTile(source, idx) {
       return;
     }
   }
-  // Validate this tile can pay
+  // Validate this tile can pay (group-aware: excludes placed tile, checks duplicates, enforces dimension consistency)
   var tile = State.storage[idx];
   if (!tile) return;
-  if (!isValidPayment(tile, State.paymentTargetTile)) {
-    addLog('That tile doesn\'t match — must share color or pattern with the placed tile.');
+  if (idx === State.paymentPlacedTileIdx) {
+    addLog('That\'s the tile being placed — pick different tiles for payment.');
+    return;
+  }
+  if (!isValidPaymentForGroup(tile, idx)) {
+    addLog('Invalid — all payment tiles must share the same color OR same pattern, no duplicates.');
     return;
   }
   // Don't allow selecting more than needed
@@ -1167,6 +1216,7 @@ function confirmPayment() {
   State.paymentSelected = [];
   State.paymentTargetTile = null;
   State.paymentCallback = null;
+  State.paymentPlacedTileIdx = null;
   if (cb) cb(storageIndices, expansionIndices);
 }
 
@@ -1183,6 +1233,7 @@ function placeTile(q, r, tileIndex) {
     // Human player: enter payment selection mode
     var needed = cost - 1;
     var placeQ = q, placeR = r, placeTileIdx = tileIndex;
+    State.paymentPlacedTileIdx = tileIndex;
     enterPaymentMode(tile, needed, function(storageIndices, expansionIndices) {
       var cell = State.garden.get(hexKey(placeQ, placeR));
       cell.tile = tile;
@@ -2094,7 +2145,7 @@ function renderStorage() {
 
       if (State.paymentMode) {
         // Payment mode: highlight eligible, mark selected
-        var eligible = isValidPayment(tile, State.paymentTargetTile);
+        var eligible = isValidPaymentForGroup(tile, i);
         if (isPaymentSelected('storage', i)) {
           slot.style.outline = '3px solid #ff6b6b';
           slot.style.outlineOffset = '-2px';
