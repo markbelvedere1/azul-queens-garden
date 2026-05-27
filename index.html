@@ -337,7 +337,7 @@ main {
 </div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.6 — Surround fix</span>
+  <span class="phase-tag">v1.7 — Expansion payment</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -987,11 +987,11 @@ function canAffordPlacement(tileIndex) {
   var cost = getPaymentCost(tile);
   if (cost <= 1) return true; // free placement (tile counts as 1)
 
-  // Need (cost - 1) additional payment tiles from storage
+  // Need (cost - 1) additional payment tiles from storage OR expansion storage
   var needed = cost - 1;
   var available = 0;
 
-  // Count tiles that could pay: share color OR pattern with placed tile, excluding the tile itself
+  // Count storage tiles that could pay: share color OR pattern with placed tile, excluding the tile itself
   for (var i = 0; i < State.storage.length; i++) {
     if (i === tileIndex) continue;
     var pt = State.storage[i];
@@ -999,6 +999,12 @@ function canAffordPlacement(tileIndex) {
     // Must share at least one attribute but NOT be identical (uniqueness includes placed tile)
     if (pt.color === tile.color && pt.pattern === tile.pattern) continue;
     if (pt.color === tile.color || pt.pattern === tile.pattern) available++;
+  }
+  // Count expansion tiles that could pay
+  for (var j = 0; j < State.expansionStorage.length; j++) {
+    var exp = State.expansionStorage[j];
+    if (exp.color === tile.color && exp.pattern === tile.pattern) continue;
+    if (exp.color === tile.color || exp.pattern === tile.pattern) available++;
   }
   return available >= needed;
 }
@@ -1099,10 +1105,11 @@ function isValidPayment(payTile, targetTile) {
 }
 
 // Group-aware payment validation: checks placed-tile exclusion, duplicates, and dimension consistency
-function isValidPaymentForGroup(tile, tileIdx) {
+// source: 'storage' or 'expansion'
+function isValidPaymentForGroup(tile, tileIdx, source) {
   if (!State.paymentMode) return false;
-  // Can't use the tile being placed as payment
-  if (tileIdx === State.paymentPlacedTileIdx) return false;
+  // Can't use the tile being placed as payment (storage tiles only)
+  if (source === 'storage' && tileIdx === State.paymentPlacedTileIdx) return false;
   var targetTile = State.paymentTargetTile;
   // Jokers are always valid payment
   if (tile.isJoker) return true;
@@ -1112,11 +1119,10 @@ function isValidPaymentForGroup(tile, tileIdx) {
   if (!sharesColor && !sharesPattern) return false;
   // Must not be identical to the placed tile (uniqueness includes placed tile)
   if (sharesColor && sharesPattern) return false;
-  // Check for duplicates (same color+pattern as any already-selected tile)
+  // Check for duplicates (same color+pattern as any already-selected tile — from ANY source)
   for (var i = 0; i < State.paymentSelected.length; i++) {
     var s = State.paymentSelected[i];
-    if (s.source !== 'storage') continue;
-    var sel = State.storage[s.idx];
+    var sel = s.source === 'expansion' ? State.expansionStorage[s.idx] : State.storage[s.idx];
     if (!sel || sel.isJoker) continue;
     if (sel.color === tile.color && sel.pattern === tile.pattern) return false;
   }
@@ -1124,8 +1130,7 @@ function isValidPaymentForGroup(tile, tileIdx) {
   var nonJokerSelected = [];
   for (var j = 0; j < State.paymentSelected.length; j++) {
     var s2 = State.paymentSelected[j];
-    if (s2.source !== 'storage') continue;
-    var sel2 = State.storage[s2.idx];
+    var sel2 = s2.source === 'expansion' ? State.expansionStorage[s2.idx] : State.storage[s2.idx];
     if (sel2 && !sel2.isJoker) nonJokerSelected.push(sel2);
   }
   if (nonJokerSelected.length === 0) return true; // first non-joker, any matching dim works
@@ -1168,11 +1173,6 @@ function cancelPaymentMode() {
 
 function togglePaymentTile(source, idx) {
   if (!State.paymentMode) return;
-  // Expansion pieces cannot be used as payment tiles
-  if (source === 'expansion') {
-    addLog('Expansion pieces cannot be used as payment — only tiles from storage.');
-    return;
-  }
   // Check if already selected — toggle off
   for (var i = 0; i < State.paymentSelected.length; i++) {
     if (State.paymentSelected[i].source === source && State.paymentSelected[i].idx === idx) {
@@ -1181,14 +1181,16 @@ function togglePaymentTile(source, idx) {
       return;
     }
   }
-  // Validate this tile can pay (group-aware: excludes placed tile, checks duplicates, enforces dimension consistency)
-  var tile = State.storage[idx];
+  // Resolve the tile from the appropriate source
+  var tile = source === 'expansion' ? State.expansionStorage[idx] : State.storage[idx];
   if (!tile) return;
-  if (idx === State.paymentPlacedTileIdx) {
+  // Can't use the tile being placed as payment (storage only)
+  if (source === 'storage' && idx === State.paymentPlacedTileIdx) {
     addLog('That\'s the tile being placed — pick different tiles for payment.');
     return;
   }
-  if (!isValidPaymentForGroup(tile, idx)) {
+  // Validate this tile can pay (group-aware: checks duplicates, enforces dimension consistency)
+  if (!isValidPaymentForGroup(tile, idx, source)) {
     addLog('Invalid — all payment tiles must share the same color OR same pattern, no duplicates.');
     return;
   }
@@ -2226,8 +2228,22 @@ function renderStorage() {
       freshSlot.id = 'expSlot' + e;
 
       if (State.paymentMode) {
-        // Expansion pieces cannot be used as payment — dim them out
-        freshSlot.style.opacity = '0.35';
+        // Check if this expansion is valid payment
+        var isSelected = false;
+        for (var ps = 0; ps < State.paymentSelected.length; ps++) {
+          if (State.paymentSelected[ps].source === 'expansion' && State.paymentSelected[ps].idx === e) {
+            isSelected = true; break;
+          }
+        }
+        if (isSelected) {
+          freshSlot.style.outline = '3px solid cyan';
+          freshSlot.style.background = '#e0ffff';
+        } else if (isValidPaymentForGroup(exp, e, 'expansion')) {
+          freshSlot.style.outline = '2px solid cyan';
+          freshSlot.style.cursor = 'pointer';
+        } else {
+          freshSlot.style.opacity = '0.35';
+        }
       }
 
       (function(slotIdx) {
