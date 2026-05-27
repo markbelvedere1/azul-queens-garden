@@ -337,7 +337,7 @@ main {
 </div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.8 — Tile recycling</span>
+  <span class="phase-tag">v1.9 — Discard filter</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -1265,14 +1265,14 @@ function placeTile(q, r, tileIndex) {
       toRemoveStorage.sort(function(a, b) { return b - a; });
       for (var i = 0; i < toRemoveStorage.length; i++) {
         var removed = State.storage.splice(toRemoveStorage[i], 1)[0];
-        if (removed && toRemoveStorage[i] !== placeTileIdx) State.discard.push(removed);
+        if (removed && toRemoveStorage[i] !== placeTileIdx && !removed.isJoker && !removed.isExpansion) State.discard.push(removed);
       }
       // Remove expansion payment tiles — go to discard
       if (expansionIndices.length > 0) {
         expansionIndices.sort(function(a, b) { return b - a; });
         for (var j = 0; j < expansionIndices.length; j++) {
           var removedExp = State.expansionStorage.splice(expansionIndices[j], 1)[0];
-          if (removedExp) State.discard.push(removedExp);
+          if (removedExp) { /* expansion tiles don't go to discard */ }
         }
       }
 
@@ -1305,7 +1305,7 @@ function placeTile(q, r, tileIndex) {
   toRemove.sort(function(a, b) { return b - a; });
   for (var i = 0; i < toRemove.length; i++) {
     var removed = State.storage.splice(toRemove[i], 1)[0];
-    if (removed && toRemove[i] !== tileIndex) State.discard.push(removed);
+    if (removed && toRemove[i] !== tileIndex && !removed.isJoker) State.discard.push(removed);
   }
 
   var payMsg = cost > 1 ? ' (paid ' + paymentIndices.length + ' tile(s))' : '';
@@ -1435,7 +1435,7 @@ function confirmExpansionPlacement(q, r) {
       storagePayIdx.sort(function(a, b) { return b - a; });
       for (var p = 0; p < storagePayIdx.length; p++) {
         var removedPay = State.storage.splice(storagePayIdx[p], 1)[0];
-        if (removedPay) State.discard.push(removedPay);
+        if (removedPay && !removedPay.isJoker) State.discard.push(removedPay);
       }
     }
     // Remove expansion payment tiles — go to discard
@@ -1443,7 +1443,7 @@ function confirmExpansionPlacement(q, r) {
       expansionPayIdx.sort(function(a, b) { return b - a; });
       for (var ep = 0; ep < expansionPayIdx.length; ep++) {
         var removedExpPay = State.expansionStorage.splice(expansionPayIdx[ep], 1)[0];
-        if (removedExpPay) State.discard.push(removedExpPay);
+        if (removedExpPay) { /* expansion tiles don't go to discard */ }
       }
     }
 
@@ -2782,7 +2782,7 @@ function aiTurn() {
     removeIdxs.sort(function(a, b) { return b - a; });
     for (var r = 0; r < removeIdxs.length; r++) {
       var removedAiTile = aiStorage.splice(removeIdxs[r], 1)[0];
-      if (removedAiTile && removeIdxs[r] !== action.tileIdx) State.discard.push(removedAiTile);
+      if (removedAiTile && removeIdxs[r] !== action.tileIdx && !removedAiTile.isJoker) State.discard.push(removedAiTile);
     }
     addLog(pName + ' places ' + tileToPlace.patternIcon + ' ' + tileToPlace.colorName + ' ' + tileToPlace.patternName);
 
@@ -2854,7 +2854,7 @@ function payAiExpansionCost(exp, storage) {
   toRemove.sort(function(a, b) { return b - a; }); // remove from end first
   for (var r = 0; r < toRemove.length; r++) {
     var removedAi = storage.splice(toRemove[r], 1)[0];
-    if (removedAi) State.discard.push(removedAi);
+    if (removedAi && !removedAi.isJoker) State.discard.push(removedAi);
   }
 }
 
