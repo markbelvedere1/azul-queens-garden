@@ -337,7 +337,7 @@ main {
 </div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.4 — Payment fix</span>
+  <span class="phase-tag">v1.5 — Payment uniqueness fix</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -996,6 +996,8 @@ function canAffordPlacement(tileIndex) {
     if (i === tileIndex) continue;
     var pt = State.storage[i];
     if (pt.isJoker) { available++; continue; }
+    // Must share at least one attribute but NOT be identical (uniqueness includes placed tile)
+    if (pt.color === tile.color && pt.pattern === tile.pattern) continue;
     if (pt.color === tile.color || pt.pattern === tile.pattern) available++;
   }
   return available >= needed;
@@ -1015,6 +1017,8 @@ function getPaymentOptions(tileIndex) {
     if (i === tileIndex) continue;
     var pt = State.storage[i];
     if (pt.isJoker || pt.color === tile.color || pt.pattern === tile.pattern) {
+      // Exclude tiles identical to the placed tile (uniqueness includes placed tile)
+      if (!pt.isJoker && pt.color === tile.color && pt.pattern === tile.pattern) continue;
       candidates.push({ idx: i, tile: pt });
     }
   }
@@ -1106,6 +1110,8 @@ function isValidPaymentForGroup(tile, tileIdx) {
   var sharesColor = tile.color === targetTile.color;
   var sharesPattern = tile.pattern === targetTile.pattern;
   if (!sharesColor && !sharesPattern) return false;
+  // Must not be identical to the placed tile (uniqueness includes placed tile)
+  if (sharesColor && sharesPattern) return false;
   // Check for duplicates (same color+pattern as any already-selected tile)
   for (var i = 0; i < State.paymentSelected.length; i++) {
     var s = State.paymentSelected[i];
