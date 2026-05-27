@@ -337,7 +337,7 @@ main {
 </div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.5 — Payment uniqueness fix</span>
+  <span class="phase-tag">v1.6 — Surround fix</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -1539,11 +1539,10 @@ function checkFeatureSurrounded(pq, pr) {
     var validCount = 0;
     for (var j = 0; j < nbrs.length; j++) {
       var nc = State.garden.get(hexKey(nbrs[j].q, nbrs[j].r));
-      if (!nc) continue;
+      if (!nc || !nc.tile) { allFilled = false; break; }
       validCount++;
-      if (!nc.tile) { allFilled = false; break; }
     }
-    if (allFilled && validCount > 0 && State.jokerPool.length > 0 && State.storage.length < 12) {
+    if (allFilled && validCount >= 3 && State.jokerPool.length > 0 && State.storage.length < 12) {
       State.storage.push(State.jokerPool.shift());
       addLog('🎉 Surrounded ' + cell.feature + '! Gained a Joker.');
     }
