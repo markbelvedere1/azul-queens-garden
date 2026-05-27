@@ -337,7 +337,7 @@ main {
 </div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.7 — Expansion payment</span>
+  <span class="phase-tag">v1.8 — Tile recycling</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -685,6 +685,7 @@ var State = {
   currentPlayer: 0,
   round: 1,
   bag: [],
+  discard: [],
   jokerPool: [],
   allExpansions: [],
   // Display area
@@ -723,6 +724,7 @@ var State = {
 function initGame() {
   viewingGarden = 0; // Reset to player's garden view
   State.bag = shuffle(createAllTiles());
+  State.discard = [];
   State.jokerPool = createJokers();
   State.allExpansions = createExpansions();
   State.round = 1;
@@ -798,11 +800,23 @@ function setupRoundDisplay() {
   addLog('Round ' + State.round + ': ' + roundExps.length + ' expansions in stack, ' + State.bag.length + ' tiles in bag.');
 }
 
+// Draw a tile from the bag; if empty, reshuffle discard pile back into bag first
+function drawFromBag() {
+  if (State.bag.length === 0 && State.discard.length > 0) {
+    addLog('🔄 Bag empty — reshuffling ' + State.discard.length + ' discarded tiles back into bag.');
+    State.bag = shuffle(State.discard);
+    State.discard = [];
+  }
+  if (State.bag.length > 0) return State.bag.pop();
+  return null;
+}
+
 function drawTilesOntoTopExpansion() {
   if (State.expansionStack.length === 0) return;
   var top = State.expansionStack[0];
   for (var t = 0; t < TILES_PER_EXPANSION; t++) {
-    if (State.bag.length) top.tilesOnTop.push(State.bag.pop());
+    var drawn = drawFromBag();
+    if (drawn) top.tilesOnTop.push(drawn);
   }
 }
 
@@ -1246,17 +1260,19 @@ function placeTile(q, r, tileIndex) {
       var cell = State.garden.get(hexKey(placeQ, placeR));
       cell.tile = tile;
 
-      // Remove storage tiles (placed tile + payment tiles)
+      // Remove storage tiles (placed tile + payment tiles) — payment tiles go to discard
       var toRemoveStorage = [placeTileIdx].concat(storageIndices);
       toRemoveStorage.sort(function(a, b) { return b - a; });
       for (var i = 0; i < toRemoveStorage.length; i++) {
-        State.storage.splice(toRemoveStorage[i], 1);
+        var removed = State.storage.splice(toRemoveStorage[i], 1)[0];
+        if (removed && toRemoveStorage[i] !== placeTileIdx) State.discard.push(removed);
       }
-      // Remove expansion payment tiles
+      // Remove expansion payment tiles — go to discard
       if (expansionIndices.length > 0) {
         expansionIndices.sort(function(a, b) { return b - a; });
         for (var j = 0; j < expansionIndices.length; j++) {
-          State.expansionStorage.splice(expansionIndices[j], 1);
+          var removedExp = State.expansionStorage.splice(expansionIndices[j], 1)[0];
+          if (removedExp) State.discard.push(removedExp);
         }
       }
 
@@ -1288,7 +1304,8 @@ function placeTile(q, r, tileIndex) {
   var toRemove = [tileIndex].concat(paymentIndices);
   toRemove.sort(function(a, b) { return b - a; });
   for (var i = 0; i < toRemove.length; i++) {
-    State.storage.splice(toRemove[i], 1);
+    var removed = State.storage.splice(toRemove[i], 1)[0];
+    if (removed && toRemove[i] !== tileIndex) State.discard.push(removed);
   }
 
   var payMsg = cost > 1 ? ' (paid ' + paymentIndices.length + ' tile(s))' : '';
@@ -1413,18 +1430,20 @@ function confirmExpansionPlacement(q, r) {
 
   // Helper to finish placement after payment (or if free)
   function finishExpansionPlacement(storagePayIdx, expansionPayIdx) {
-    // Remove storage payment tiles
+    // Remove storage payment tiles — go to discard
     if (storagePayIdx && storagePayIdx.length > 0) {
       storagePayIdx.sort(function(a, b) { return b - a; });
       for (var p = 0; p < storagePayIdx.length; p++) {
-        State.storage.splice(storagePayIdx[p], 1);
+        var removedPay = State.storage.splice(storagePayIdx[p], 1)[0];
+        if (removedPay) State.discard.push(removedPay);
       }
     }
-    // Remove expansion payment tiles
+    // Remove expansion payment tiles — go to discard
     if (expansionPayIdx && expansionPayIdx.length > 0) {
       expansionPayIdx.sort(function(a, b) { return b - a; });
       for (var ep = 0; ep < expansionPayIdx.length; ep++) {
-        State.expansionStorage.splice(expansionPayIdx[ep], 1);
+        var removedExpPay = State.expansionStorage.splice(expansionPayIdx[ep], 1)[0];
+        if (removedExpPay) State.discard.push(removedExpPay);
       }
     }
 
@@ -2561,7 +2580,7 @@ function showExpansionPickup(exp, displayIdx) {
 
 function updateBagCounter() {
   var el = document.getElementById('bagCounter');
-  el.textContent = 'Bag: ' + State.bag.length + ' tiles | Jokers remaining: ' + State.jokerPool.length;
+  el.textContent = 'Bag: ' + State.bag.length + ' tiles | Discard: ' + State.discard.length + ' | Jokers remaining: ' + State.jokerPool.length;
 }
 
 // === EVENT HANDLERS ===
@@ -2762,7 +2781,8 @@ function aiTurn() {
     var removeIdxs = [action.tileIdx].concat(action.paymentIdxs || []);
     removeIdxs.sort(function(a, b) { return b - a; });
     for (var r = 0; r < removeIdxs.length; r++) {
-      aiStorage.splice(removeIdxs[r], 1);
+      var removedAiTile = aiStorage.splice(removeIdxs[r], 1)[0];
+      if (removedAiTile && removeIdxs[r] !== action.tileIdx) State.discard.push(removedAiTile);
     }
     addLog(pName + ' places ' + tileToPlace.patternIcon + ' ' + tileToPlace.colorName + ' ' + tileToPlace.patternName);
 
@@ -2833,7 +2853,8 @@ function payAiExpansionCost(exp, storage) {
   var toRemove = candidates.slice(0, needed);
   toRemove.sort(function(a, b) { return b - a; }); // remove from end first
   for (var r = 0; r < toRemove.length; r++) {
-    storage.splice(toRemove[r], 1);
+    var removedAi = storage.splice(toRemove[r], 1)[0];
+    if (removedAi) State.discard.push(removedAi);
   }
 }
 
