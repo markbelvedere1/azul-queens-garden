@@ -315,6 +315,46 @@ main {
   .storage-grid { grid-template-columns: repeat(4, 1fr); }
   .exp-stack-item { width: 130px; }
 }
+/* Trainer Review Panel */
+.trainer-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center;
+  z-index: 200; animation: fadeIn 0.3s ease;
+}
+.trainer-panel {
+  background: #1a1a2e; color: #e8e8e8; border-radius: 12px; padding: 28px 32px;
+  max-width: 580px; width: 90vw; max-height: 85vh; overflow-y: auto;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.5); font-size: 0.88rem; line-height: 1.5;
+}
+.trainer-panel h2 { color: #FFD54F; margin-bottom: 16px; font-size: 1.3rem; }
+.trainer-panel h3 { color: #81C784; margin: 18px 0 8px; font-size: 1rem; border-bottom: 1px solid #333; padding-bottom: 4px; }
+.trainer-grade { font-size: 3rem; font-weight: 800; margin: 8px 0 4px; }
+.trainer-grade.grade-A { color: #27AE60; }
+.trainer-grade.grade-B { color: #81C784; }
+.trainer-grade.grade-C { color: #FFD54F; }
+.trainer-grade.grade-D { color: #E67E22; }
+.trainer-grade.grade-F { color: #C0392B; }
+.trainer-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+.trainer-stat { background: #16213e; padding: 10px 12px; border-radius: 8px; }
+.trainer-stat .label { font-size: 0.75rem; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+.trainer-stat .value { font-size: 1.1rem; font-weight: 600; color: #fff; margin-top: 2px; }
+.trainer-miss { background: #1e1e3a; border-left: 3px solid #E67E22; padding: 10px 12px; margin: 8px 0; border-radius: 0 6px 6px 0; }
+.trainer-miss .turn-label { font-size: 0.75rem; color: #E67E22; font-weight: 600; }
+.trainer-miss .desc { margin-top: 4px; }
+.trainer-miss .better { color: #81C784; font-size: 0.82rem; margin-top: 4px; }
+.trainer-advice { background: #16213e; padding: 10px 14px; margin: 6px 0; border-radius: 6px; }
+.trainer-advice .emoji { margin-right: 6px; }
+.trainer-close {
+  display: block; width: 100%; margin-top: 20px; padding: 10px; background: #FFD54F;
+  color: #1a1a2e; border: none; border-radius: 8px; font-size: 0.95rem;
+  font-weight: 600; cursor: pointer;
+}
+.trainer-close:hover { background: #ffca28; }
+.game-over-card .btn-review {
+  margin-top: 8px; padding: 10px 24px; background: #1a1a2e; color: #FFD54F;
+  border: 2px solid #FFD54F; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
+}
+.game-over-card .btn-review:hover { background: #FFD54F; color: #1a1a2e; }
 </style>
 </head>
 <body>
@@ -337,7 +377,7 @@ main {
 </div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v2.1 — Adaptive AI opponent</span>
+  <span class="phase-tag">v2.2 — Trainer module</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -746,6 +786,8 @@ function initGame() {
   State.log = [];
   State.phase = 'acquire';
   State.roundPassed = [false, false, false, false];
+  State.moveLog = [];
+  State.turnCounter = 0;
 
   State.players = [
     { name: 'You',        score: 15, color: '#2C2416', isHuman: true },
@@ -2522,8 +2564,8 @@ function showMatchModal(tile) {
 
   document.body.appendChild(overlay);
 
-  cBtn.addEventListener('click', function() { dismissMatchModal(); if (executeAcquire('color', tile.color)) endTurn(); });
-  pBtn.addEventListener('click', function() { dismissMatchModal(); if (executeAcquire('pattern', tile.pattern)) endTurn(); });
+  cBtn.addEventListener('click', function() { dismissMatchModal(); logPlayerMove({type: 'acquire', attrType: 'color', attrValue: tile.color}); if (executeAcquire('color', tile.color)) endTurn(); });
+  pBtn.addEventListener('click', function() { dismissMatchModal(); logPlayerMove({type: 'acquire', attrType: 'pattern', attrValue: tile.pattern}); if (executeAcquire('pattern', tile.pattern)) endTurn(); });
   cancel.addEventListener('click', function() { dismissMatchModal(); });
   overlay.addEventListener('click', function(e) { if (e.target === overlay) dismissMatchModal(); });
 }
@@ -2575,6 +2617,7 @@ function showExpansionPickup(exp, displayIdx) {
 
   pickBtn.addEventListener('click', function() {
     dismissMatchModal();
+    logPlayerMove({type: 'acquireExp', expIndex: displayIdx});
     if (executeAcquireExpansion(displayIdx)) endTurn();
   });
   cancel.addEventListener('click', function() { dismissMatchModal(); });
@@ -2629,6 +2672,7 @@ function handleHexClick(q, r) {
       }
     }
     if (isCandidate) {
+      logPlayerMove({type: 'placeExp'});
       if (confirmExpansionPlacement(q, r)) {
         endTurn();
       }
@@ -2647,6 +2691,7 @@ function handleHexClick(q, r) {
   }
 
   if (canPlaceTile(q, r, tile)) {
+    logPlayerMove({type: 'place', tileIdx: State.selectedStorageTile, target: {q: q, r: r}, tile: {colorName: tile.colorName, patternName: tile.patternName, cost: tile.cost}});
     if (placeTile(q, r, State.selectedStorageTile)) {
       endTurn();
     }
@@ -3169,6 +3214,418 @@ function decideAiActionAdaptive(playerIdx, storage, expStorage, garden) {
   return candidates[0].action;
 }
 
+// === TRAINER MODULE — Player Move Evaluation ===
+
+function describeAction(action) {
+  if (action.type === 'acquire') {
+    var name = action.attrType === 'color' ? COLOR_MAP[action.attrValue].name : PATTERN_MAP[action.attrValue].name;
+    return 'Acquire ' + action.attrType + ': ' + name;
+  }
+  if (action.type === 'place') {
+    var t = action.tile || {};
+    return 'Place ' + (t.patternName || '?') + ' ' + (t.colorName || '?') + ' at (' + action.target.q + ',' + action.target.r + ')';
+  }
+  if (action.type === 'acquireExp') return 'Pick up expansion';
+  if (action.type === 'placeExp') return 'Place expansion';
+  if (action.type === 'pass') return 'Pass';
+  return action.type;
+}
+
+function describeWhy(best, player) {
+  if (best.type === 'acquire') {
+    var name = best.attrType === 'color' ? COLOR_MAP[best.attrValue].name : PATTERN_MAP[best.attrValue].name;
+    var m = getAcquireMatches(best.attrType, best.attrValue);
+    return 'acquires ' + m.tiles.length + ' ' + name + ' tile(s)';
+  }
+  if (best.type === 'place') {
+    var t = best.tile || {};
+    var reasons = [];
+    if (best._groupAdj > 0) reasons.push('extends ' + best._groupAdj + '-tile group');
+    if (best._completesFeature) reasons.push('completes feature surround');
+    if (reasons.length === 0) reasons.push('better board position');
+    return 'place ' + (t.patternName || '') + ' ' + (t.colorName || '') + ' — ' + reasons.join(', ');
+  }
+  if (best.type === 'acquireExp') return 'pick up expansion for garden growth';
+  if (best.type === 'placeExp') return 'place expansion early for pavilion scoring';
+  if (best.type === 'pass') return 'no better options available';
+  return '';
+}
+
+function evaluatePlayerState() {
+  // Build the same candidate list the adaptive AI would for the human player's state
+  var w = ADAPTIVE_W;
+  var wheelAttrs = getCurrentWheelAttributes();
+  var roundPts = getCurrentRoundPoints();
+  var garden = State.garden;
+  var storage = State.storage;
+  var expStorage = State.expansionStorage;
+  var candidates = [];
+
+  var gardenByColor = {};
+  var gardenByPattern = {};
+  garden.forEach(function(cell) {
+    if (!cell.tile || cell.tile.isJoker) return;
+    gardenByColor[cell.tile.color] = (gardenByColor[cell.tile.color] || 0) + 1;
+    gardenByPattern[cell.tile.pattern] = (gardenByPattern[cell.tile.pattern] || 0) + 1;
+  });
+
+  var hasTilesInDisplay = false;
+  if (State.expansionStack.length > 0 && State.expansionStack[0].tilesOnTop.length > 0) hasTilesInDisplay = true;
+  if (!hasTilesInDisplay) {
+    for (var d = 0; d < State.displayExpansions.length; d++) {
+      if (State.displayExpansions[d].tilesOnTop && State.displayExpansions[d].tilesOnTop.length > 0 && !State.displayExpansions[d].faceUp) {
+        hasTilesInDisplay = true; break;
+      }
+    }
+  }
+
+  // Score acquire actions
+  if (hasTilesInDisplay && storage.length < 12) {
+    for (var ci = 0; ci < COLORS.length; ci++) {
+      var cid = COLORS[ci].id;
+      var m = getAcquireMatches('color', cid);
+      if (m.tiles.length === 0 || storage.length + m.tiles.length > 12) continue;
+      var score = m.tiles.length * w[0];
+      for (var wi = 0; wi < 3; wi++) {
+        if (wheelAttrs[wi].type === 'color' && wheelAttrs[wi].id === cid)
+          score += m.tiles.length * roundPts[wi] * w[1];
+      }
+      score += (gardenByColor[cid] || 0) * w[2];
+      var totalCost = 0;
+      for (var ti = 0; ti < m.tiles.length; ti++) totalCost += m.tiles[ti].tile.cost;
+      score += totalCost * w[3];
+      var newSize = storage.length + m.tiles.length;
+      if (newSize > 8) score += (newSize - 8) * w[11];
+      if (storage.length < 4) score += w[12];
+      candidates.push({ score: score, action: { type: 'acquire', attrType: 'color', attrValue: cid } });
+    }
+    for (var pi = 0; pi < PATTERNS.length; pi++) {
+      var pid = PATTERNS[pi].id;
+      var m2 = getAcquireMatches('pattern', pid);
+      if (m2.tiles.length === 0 || storage.length + m2.tiles.length > 12) continue;
+      var score2 = m2.tiles.length * w[0];
+      for (var wi2 = 0; wi2 < 3; wi2++) {
+        if (wheelAttrs[wi2].type === 'pattern' && wheelAttrs[wi2].id === pid)
+          score2 += m2.tiles.length * roundPts[wi2] * w[1];
+      }
+      score2 += (gardenByPattern[pid] || 0) * w[2];
+      var totalCost2 = 0;
+      for (var ti2 = 0; ti2 < m2.tiles.length; ti2++) totalCost2 += m2.tiles[ti2].tile.cost;
+      score2 += totalCost2 * w[3];
+      var newSize2 = storage.length + m2.tiles.length;
+      if (newSize2 > 8) score2 += (newSize2 - 8) * w[11];
+      if (storage.length < 4) score2 += w[12];
+      candidates.push({ score: score2, action: { type: 'acquire', attrType: 'pattern', attrValue: pid } });
+    }
+  }
+
+  // Score placement actions
+  for (var si = 0; si < storage.length; si++) {
+    var tile = storage[si];
+    var payment = findAiPayment(storage, si);
+    if (tile.cost > 1 && !tile.isJoker && payment === null) continue;
+    var validHexes = [];
+    garden.forEach(function(cell) {
+      if (cell.tile) return;
+      var nbrs = hexNeighbors(cell.q, cell.r);
+      var hasAdj = false;
+      var valid = true;
+      for (var n = 0; n < nbrs.length; n++) {
+        var nc = garden.get(hexKey(nbrs[n].q, nbrs[n].r));
+        if (!nc || !nc.tile) continue;
+        hasAdj = true;
+        if (nc.tile.color === tile.color && nc.tile.pattern === tile.pattern) { valid = false; break; }
+        if (!tile.isJoker && !nc.tile.isJoker && nc.tile.color !== tile.color && nc.tile.pattern !== tile.pattern) { valid = false; break; }
+      }
+      var gardenHasTiles = false;
+      garden.forEach(function(c) { if (c.tile) gardenHasTiles = true; });
+      if (gardenHasTiles && !hasAdj) return;
+      if (valid) validHexes.push({ q: cell.q, r: cell.r });
+    });
+    if (validHexes.length === 0) continue;
+
+    var bestHexScore = -Infinity;
+    var bestHex = validHexes[0];
+    var bestGroupAdj = 0;
+    var bestCompletesFeature = false;
+    for (var hi = 0; hi < validHexes.length; hi++) {
+      var hex = validHexes[hi];
+      var hs = 0;
+      var hnbrs = hexNeighbors(hex.q, hex.r);
+      var sameColor = 0, samePattern = 0;
+      for (var hn = 0; hn < hnbrs.length; hn++) {
+        var hnc = garden.get(hexKey(hnbrs[hn].q, hnbrs[hn].r));
+        if (!hnc || !hnc.tile || hnc.tile.isJoker) continue;
+        if (hnc.tile.color === tile.color) sameColor++;
+        if (hnc.tile.pattern === tile.pattern) samePattern++;
+      }
+      hs += Math.max(sameColor, samePattern) * w[7];
+      var cf = wouldAiCompleteFeature(garden, hex.q, hex.r);
+      if (cf) hs += w[8];
+      if (hs > bestHexScore) {
+        bestHexScore = hs;
+        bestHex = hex;
+        bestGroupAdj = Math.max(sameColor, samePattern);
+        bestCompletesFeature = cf;
+      }
+    }
+
+    var placeScore = w[4];
+    placeScore += tile.cost * w[5];
+    for (var pwi = 0; pwi < 3; pwi++) {
+      var wa = wheelAttrs[pwi];
+      if ((wa.type === 'color' && tile.color === wa.id) ||
+          (wa.type === 'pattern' && tile.pattern === wa.id))
+        placeScore += roundPts[pwi] * w[6];
+    }
+    placeScore += bestHexScore;
+    if (State.round >= 3) placeScore += w[14];
+    candidates.push({
+      score: placeScore,
+      action: {
+        type: 'place', tileIdx: si, target: bestHex,
+        tile: { colorName: tile.colorName, patternName: tile.patternName, cost: tile.cost },
+        _groupAdj: bestGroupAdj, _completesFeature: bestCompletesFeature
+      }
+    });
+  }
+
+  // Score expansion acquire
+  if ((expStorage || []).length < 2) {
+    for (var ei = 0; ei < State.displayExpansions.length; ei++) {
+      if (State.displayExpansions[ei].faceUp) {
+        var expScore = w[9] + (4 - State.round) * w[10];
+        candidates.push({ score: expScore, action: { type: 'acquireExp', expIndex: ei } });
+      }
+    }
+  }
+
+  // Score expansion place
+  if ((expStorage || []).length > 0 && canAffordExpansion(0)) {
+    var centers = findValidExpansionCenters();
+    if (centers.length > 0) {
+      var placeExpScore = w[9] * 1.5 + (4 - State.round) * w[10];
+      candidates.push({ score: placeExpScore, action: { type: 'placeExp' } });
+    }
+  }
+
+  // Score pass
+  var passScore = w[13];
+  var anyPassed = false;
+  for (var rp = 0; rp < State.roundPassed.length; rp++) {
+    if (State.roundPassed[rp]) { anyPassed = true; break; }
+  }
+  if (!anyPassed) passScore += w[13] * 0.5;
+  candidates.push({ score: passScore, action: { type: 'pass' } });
+
+  candidates.sort(function(a, b) { return b.score - a.score; });
+  return candidates;
+}
+
+function logPlayerMove(playerAction) {
+  State.turnCounter++;
+  var candidates = evaluatePlayerState();
+  var best = candidates.length > 0 ? candidates[0] : { score: 0, action: { type: 'pass' } };
+
+  // Find the score for the player's actual action
+  var playerScore = null;
+  for (var i = 0; i < candidates.length; i++) {
+    var c = candidates[i];
+    if (c.action.type === playerAction.type) {
+      if (playerAction.type === 'acquire') {
+        if (c.action.attrType === playerAction.attrType && c.action.attrValue === playerAction.attrValue) {
+          playerScore = c.score;
+          break;
+        }
+      } else if (playerAction.type === 'place') {
+        if (c.action.tileIdx === playerAction.tileIdx) {
+          playerScore = c.score;
+          break;
+        }
+      } else {
+        playerScore = c.score;
+        break;
+      }
+    }
+  }
+  // If we couldn't match the action, use the worst score
+  if (playerScore === null) playerScore = candidates.length > 0 ? candidates[candidates.length - 1].score : 0;
+
+  var delta = best.score - playerScore;
+
+  State.moveLog.push({
+    turn: State.turnCounter,
+    round: State.round,
+    action: playerAction,
+    actionDesc: describeAction(playerAction),
+    playerScore: playerScore,
+    bestAction: best.action,
+    bestDesc: describeAction(best.action),
+    bestScore: best.score,
+    delta: delta,
+    why: delta > 1.0 ? describeWhy(best.action) : ''
+  });
+}
+
+// === TRAINER REVIEW PANEL ===
+function showTrainerReview() {
+  var existing = document.querySelector('.trainer-overlay');
+  if (existing) existing.parentNode.removeChild(existing);
+
+  var log = State.moveLog;
+  if (!log || log.length === 0) return;
+
+  // Compute stats
+  var totalMoves = log.length;
+  var goodMoves = 0;
+  var bigMisses = 0;
+  var totalDelta = 0;
+  var earlyPasses = 0;
+  var acquireCounts = [];
+  var expansionActions = 0;
+  var featureCompletions = 0;
+  var groupExtensions = 0;
+  var passesPerRound = [0, 0, 0, 0];
+
+  for (var i = 0; i < log.length; i++) {
+    var entry = log[i];
+    totalDelta += entry.delta;
+    if (entry.delta < 1.0) goodMoves++;
+    if (entry.delta > 3.0) bigMisses++;
+    if (entry.action.type === 'pass') {
+      passesPerRound[entry.round - 1]++;
+      if (entry.round <= 3) earlyPasses++;
+    }
+    if (entry.action.type === 'acquire') {
+      var acqM = getAcquireMatches(entry.action.attrType, entry.action.attrValue);
+      acquireCounts.push(acqM.tiles.length);
+    }
+    if (entry.action.type === 'acquireExp' || entry.action.type === 'placeExp') expansionActions++;
+    if (entry.bestAction && entry.bestAction._completesFeature) featureCompletions++;
+    if (entry.bestAction && entry.bestAction._groupAdj > 0) groupExtensions++;
+  }
+
+  var avgDelta = totalDelta / totalMoves;
+  var avgAcquire = acquireCounts.length > 0 ? acquireCounts.reduce(function(a, b) { return a + b; }, 0) / acquireCounts.length : 0;
+  var grade, gradeClass;
+  if (avgDelta < 1) { grade = 'A'; gradeClass = 'grade-A'; }
+  else if (avgDelta < 2) { grade = 'B'; gradeClass = 'grade-B'; }
+  else if (avgDelta < 3) { grade = 'C'; gradeClass = 'grade-C'; }
+  else if (avgDelta < 5) { grade = 'D'; gradeClass = 'grade-D'; }
+  else { grade = 'F'; gradeClass = 'grade-F'; }
+
+  // Build the panel
+  var overlay = document.createElement('div');
+  overlay.classList.add('trainer-overlay');
+
+  var panel = document.createElement('div');
+  panel.classList.add('trainer-panel');
+
+  var html = '<h2>📊 Game Review — Trainer Analysis</h2>';
+
+  // Grade
+  html += '<div style="text-align:center"><div class="trainer-grade ' + gradeClass + '">' + grade + '</div>';
+  html += '<div style="color:#999;font-size:0.8rem">Average decision gap: ' + avgDelta.toFixed(1) + ' pts</div></div>';
+
+  // Summary stats
+  html += '<div class="trainer-summary">';
+  html += '<div class="trainer-stat"><div class="label">Moves Analyzed</div><div class="value">' + totalMoves + '</div></div>';
+  html += '<div class="trainer-stat"><div class="label">Optimal Moves</div><div class="value">' + goodMoves + ' / ' + totalMoves + ' (' + Math.round(goodMoves / totalMoves * 100) + '%)</div></div>';
+  html += '<div class="trainer-stat"><div class="label">Significant Misses</div><div class="value">' + bigMisses + '</div></div>';
+  html += '<div class="trainer-stat"><div class="label">Final Score</div><div class="value">' + State.players[0].score + ' pts</div></div>';
+  html += '</div>';
+
+  // Top 5 misses
+  var misses = log.filter(function(e) { return e.delta > 1.0; }).sort(function(a, b) { return b.delta - a.delta; }).slice(0, 5);
+  if (misses.length > 0) {
+    html += '<h3>🎯 Biggest Missed Opportunities</h3>';
+    for (var mi = 0; mi < misses.length; mi++) {
+      var miss = misses[mi];
+      html += '<div class="trainer-miss">';
+      html += '<div class="turn-label">Turn ' + miss.turn + ' (Round ' + miss.round + ') — Δ' + miss.delta.toFixed(1) + ' pts</div>';
+      html += '<div class="desc">You: ' + miss.actionDesc + '</div>';
+      html += '<div class="better">Better: ' + miss.bestDesc + (miss.why ? ' — ' + miss.why : '') + '</div>';
+      html += '</div>';
+    }
+  }
+
+  // Pattern advice
+  html += '<h3>💡 Strategic Advice</h3>';
+  var advice = [];
+
+  // Check acquisition volume
+  if (avgAcquire < 2.5 && acquireCounts.length > 0) {
+    advice.push({ emoji: '📦', text: 'You\'re acquiring too few tiles per action (avg ' + avgAcquire.toFixed(1) + '). Tile volume is the AI\'s strongest signal — look for colors/patterns that grab 3-4+ tiles at once.' });
+  }
+
+  // Check early passing
+  if (earlyPasses >= 2) {
+    advice.push({ emoji: '⏰', text: 'You passed ' + earlyPasses + ' time(s) in rounds 1-3. The AI strongly avoids passing — staying in the round to acquire and place more tiles compounds your score.' });
+  }
+
+  // Check expansion usage
+  if (expansionActions < 2) {
+    advice.push({ emoji: '🏗️', text: 'You underused expansions (' + expansionActions + ' expansion action(s)). Expansions add pavilions that score every round AND give jokers when surrounded. Prioritize them early.' });
+  }
+
+  // Check group building via misses
+  var groupMisses = log.filter(function(e) { return e.delta > 2.0 && e.bestAction && e.bestAction.type === 'place' && e.bestAction._groupAdj > 0; });
+  if (groupMisses.length >= 2) {
+    advice.push({ emoji: '🔗', text: 'You missed ' + groupMisses.length + ' opportunities to extend connected groups. Group bonus is the #1 endgame mechanic under corrected scoring — cluster same-color or same-pattern tiles together.' });
+  }
+
+  // Check feature completion misses
+  var featureMisses = log.filter(function(e) { return e.delta > 1.5 && e.bestAction && e.bestAction._completesFeature; });
+  if (featureMisses.length >= 1) {
+    advice.push({ emoji: '⭐', text: 'You missed ' + featureMisses.length + ' chance(s) to complete a feature surround. Surrounding features (especially pavilions) earns jokers — the AI\'s second-strongest signal.' });
+  }
+
+  // Check if player acquired low-volume when high-volume was available
+  var volumeMisses = log.filter(function(e) {
+    return e.action.type === 'acquire' && e.bestAction && e.bestAction.type === 'acquire' && e.delta > 2.0;
+  });
+  if (volumeMisses.length >= 3) {
+    advice.push({ emoji: '🎯', text: 'In ' + volumeMisses.length + ' acquisitions, a significantly better tile pick was available. When acquiring, scan ALL colors and patterns — the best pick isn\'t always the obvious one.' });
+  }
+
+  if (advice.length === 0) {
+    advice.push({ emoji: '🏆', text: 'Excellent play! Your decisions closely matched the trained AI. Keep building connected groups and farming features.' });
+  }
+
+  for (var ai = 0; ai < advice.length; ai++) {
+    html += '<div class="trainer-advice"><span class="emoji">' + advice[ai].emoji + '</span>' + advice[ai].text + '</div>';
+  }
+
+  // Round-by-round pass summary
+  html += '<h3>📈 Round Summary</h3>';
+  var roundMoves = [[], [], [], []];
+  for (var ri = 0; ri < log.length; ri++) {
+    var rnd = log[ri].round;
+    if (rnd >= 1 && rnd <= 4) roundMoves[rnd - 1].push(log[ri]);
+  }
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0">';
+  for (var rr = 0; rr < 4; rr++) {
+    var rm = roundMoves[rr];
+    var rAvgD = rm.length > 0 ? rm.reduce(function(a, b) { return a + b.delta; }, 0) / rm.length : 0;
+    var rGood = rm.filter(function(e) { return e.delta < 1.0; }).length;
+    html += '<div class="trainer-stat" style="text-align:center">';
+    html += '<div class="label">Round ' + (rr + 1) + '</div>';
+    html += '<div class="value">' + rm.length + ' moves</div>';
+    html += '<div style="font-size:0.75rem;color:#999">' + rGood + ' optimal · Δ' + rAvgD.toFixed(1) + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  html += '<button class="trainer-close" onclick="this.closest(\'.trainer-overlay\').remove()">Close Review</button>';
+
+  panel.innerHTML = html;
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) overlay.remove();
+  });
+  document.body.appendChild(overlay);
+}
+
 function decideAiAction(playerIdx, storage, expStorage, garden) {
   // Use adaptive strategy if player has it
   if (State.players[playerIdx].strategy === 'adaptive') {
@@ -3439,6 +3896,7 @@ document.getElementById('btnNewGame').addEventListener('click', function() {
 document.getElementById('btnPass').addEventListener('click', function() {
   if (State.currentPlayer !== 0) return;
   if (State.expansionTilePlacing || State.placingExpansion || State.paymentMode) return;
+  logPlayerMove({type: 'pass'});
   applyFirstPassPenalty(0);
   addLog('You pass.');
   State.roundPassed[0] = true;
@@ -3513,6 +3971,14 @@ function showGameOver(winner) {
     scoresDiv.appendChild(row);
   }
   card.appendChild(scoresDiv);
+
+  var reviewBtn = document.createElement('button');
+  reviewBtn.classList.add('btn-review');
+  reviewBtn.textContent = '📊 Review Game';
+  reviewBtn.addEventListener('click', function() {
+    showTrainerReview();
+  });
+  card.appendChild(reviewBtn);
 
   var btn = document.createElement('button');
   btn.textContent = 'New Game';
