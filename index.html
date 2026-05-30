@@ -337,7 +337,7 @@ main {
 </div>
 <header>
   <h1>🌺 Azul: Queen's Garden</h1>
-  <span class="phase-tag">v1.9 — Discard filter</span>
+  <span class="phase-tag">v2.1 — Adaptive AI opponent</span>
 </header>
 <main>
   <!-- Display Area -->
@@ -351,8 +351,8 @@ main {
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <h2 style="flex:1;font-size:0.9rem;color:var(--accent)" id="gardenTitle">Your Garden</h2>
       <button class="garden-tab active" id="tabYou" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--accent);color:white;cursor:pointer">You</button>
-      <button class="garden-tab" id="tabAI1" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--surface);cursor:pointer">Greedy</button>
-      <button class="garden-tab" id="tabAI2" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--surface);cursor:pointer">Builder</button>
+      <button class="garden-tab" id="tabAI1" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--surface);cursor:pointer">AI-1</button>
+      <button class="garden-tab" id="tabAI2" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--surface);cursor:pointer">AI-2</button>
       <button class="garden-tab" id="tabAI3" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--borders);border-radius:4px;background:var(--surface);cursor:pointer">Balance</button>
     </div>
     <div id="gardenContainer"></div>
@@ -749,9 +749,9 @@ function initGame() {
 
   State.players = [
     { name: 'You',        score: 15, color: '#2C2416', isHuman: true },
-    { name: 'AI-Greedy',  score: 15, color: '#C62828', isHuman: false },
-    { name: 'AI-Builder', score: 15, color: '#1565C0', isHuman: false },
-    { name: 'AI-Balance', score: 15, color: '#6A1B9A', isHuman: false }
+    { name: 'AI-Adaptive', score: 15, color: '#C62828', isHuman: false, strategy: 'adaptive' },
+    { name: 'AI-Adaptive', score: 15, color: '#1565C0', isHuman: false, strategy: 'adaptive' },
+    { name: 'AI-Adaptive', score: 15, color: '#6A1B9A', isHuman: false, strategy: 'adaptive' }
   ];
 
   // Init fountain garden
@@ -1618,14 +1618,11 @@ function countMatchingHexes(garden, attr) {
 }
 
 function scoreFeatures(garden) {
-  var total = 0;
-  var counts = { fountain: 0, bench: 0, gazebo: 0 };
+  var pavilions = 0;
   garden.forEach(function(cell) {
-    if (cell.feature === 'fountain') { total += 1; counts.fountain++; }
-    else if (cell.feature === 'bench') { total += 2; counts.bench++; }
-    else if (cell.feature === 'gazebo') { total += 3; counts.gazebo++; }
+    if (cell.feature === 'gazebo') pavilions++; // only pavilions score
   });
-  return { total: total, counts: counts };
+  return { total: pavilions, count: pavilions };
 }
 
 function scoreEndOfRound(garden) {
@@ -1642,14 +1639,10 @@ function scoreEndOfRound(garden) {
     details.push(attrs[i].name + ': ' + matchCount + '×' + points[i] + '=' + earned);
   }
 
-  // Feature scoring: fountain=1pt, bench=2pt, gazebo=3pt
+  // Feature scoring: 1pt per visible pavilion
   var feat = scoreFeatures(garden);
   totalScore += feat.total;
-  var featParts = [];
-  if (feat.counts.fountain > 0) featParts.push('⛲×' + feat.counts.fountain + '=' + feat.counts.fountain);
-  if (feat.counts.bench > 0) featParts.push('🪑×' + feat.counts.bench + '=' + (feat.counts.bench * 2));
-  if (feat.counts.gazebo > 0) featParts.push('🏛️×' + feat.counts.gazebo + '=' + (feat.counts.gazebo * 3));
-  if (featParts.length > 0) details.push('Features: ' + featParts.join(', '));
+  if (feat.count > 0) details.push('Pavilions: ' + feat.count + '×1=' + feat.count);
 
   return { total: totalScore, details: details };
 }
@@ -1664,9 +1657,10 @@ function scoreFinalGroups(garden) {
   for (var i = 0; i < colorGroups.length; i++) {
     var g = colorGroups[i];
     if (g.size >= 3) {
-      var pts = 3;
-      // Check if group has all 6 patterns → +6 bonus
-      if (hasAllSixOfType(g.tiles, 'pattern')) pts += 6;
+      var pts = 0;
+      for (var ti = 0; ti < g.tiles.length; ti++) pts += (g.tiles[ti].cost || 1);
+      // Bonus: +6 for groups of 6+
+      if (g.size >= 6) pts += 6;
       totalScore += pts;
       details.push('Color group (' + g.attribute + ', size ' + g.size + '): ' + pts + ' pts');
     }
@@ -1677,8 +1671,9 @@ function scoreFinalGroups(garden) {
   for (var j = 0; j < patternGroups.length; j++) {
     var pg = patternGroups[j];
     if (pg.size >= 3) {
-      var pPts = 3;
-      if (hasAllSixOfType(pg.tiles, 'color')) pPts += 6;
+      var pPts = 0;
+      for (var tj = 0; tj < pg.tiles.length; tj++) pPts += (pg.tiles[tj].cost || 1);
+      if (pg.size >= 6) pPts += 6;
       totalScore += pPts;
       details.push('Pattern group (' + pg.attribute + ', size ' + pg.size + '): ' + pPts + ' pts');
     }
@@ -1740,8 +1735,16 @@ function hasAllSixOfType(tiles, attrType) {
 
 function scoreLeftovers(storage, expansionStorage) {
   var penalty = 0;
-  penalty -= storage.length; // -1 per tile
-  penalty -= expansionStorage.length * 3; // -3 per expansion
+  for (var i = 0; i < storage.length; i++) {
+    if (storage[i].isJoker) {
+      penalty += 1; // jokers score +1
+    } else {
+      penalty -= (storage[i].cost || 1); // negative pattern value
+    }
+  }
+  for (var j = 0; j < expansionStorage.length; j++) {
+    penalty -= (expansionStorage[j].cost || 3); // expansion pattern value
+  }
   return penalty;
 }
 
@@ -2651,6 +2654,19 @@ function handleHexClick(q, r) {
   } catch (e) { showError(e.message, e.stack, 'handleHexClick(q=' + q + ',r=' + r + ')'); }
 }
 
+// Check if this is the first pass of the round; if so, apply -1 penalty
+function applyFirstPassPenalty(playerIdx) {
+  var anyPassed = false;
+  for (var i = 0; i < State.roundPassed.length; i++) {
+    if (State.roundPassed[i]) { anyPassed = true; break; }
+  }
+  if (!anyPassed) {
+    // This is the first player to pass this round
+    State.players[playerIdx].score = Math.max(0, State.players[playerIdx].score - 1);
+    addLog(State.players[playerIdx].name + ' is first to pass: -1 pt');
+  }
+}
+
 // === TURN MANAGEMENT ===
 function endTurn() {
   try {
@@ -2768,6 +2784,7 @@ function aiTurn() {
       State.displayExpansions.splice(aeIdx, 1);
       addLog(pName + ' picks up expansion: ' + pickedExp.colorName + ' ' + pickedExp.patternName);
     } else {
+      applyFirstPassPenalty(p);
       addLog(pName + ' passes.');
       State.roundPassed[p] = true;
     }
@@ -2793,6 +2810,7 @@ function aiTurn() {
     addLog(pName + ' places expansion: ' + aiExp.colorName + ' ' + aiExp.patternName);
 
   } else {
+    applyFirstPassPenalty(p);
     addLog(pName + ' passes.');
     State.roundPassed[p] = true;
   }
@@ -2922,7 +2940,240 @@ function expandAiGarden(playerIdx, garden, aiExp, aiStorage) {
   }
 }
 
+// === TRAINED ADAPTIVE AI WEIGHTS (v2.0 evolutionary training, 25 generations) ===
+var ADAPTIVE_W = [
+  4.2449,   // 0: tile_volume — value per tile acquired
+  0.6588,   // 1: wheel_acquire — multiplier for wheel-matching acquisitions
+  1.3716,   // 2: garden_synergy — value per garden tile matching acquired type
+  -0.0465,  // 3: high_value_pref — multiplier on tile.cost when acquiring
+  -0.2860,  // 4: placement_base — base value of placing a tile
+  -0.2034,  // 5: placed_value_mult — multiplier on tile.cost when placing
+  0.0715,   // 6: wheel_place — multiplier for placing wheel-matching tiles
+  1.2263,   // 7: group_extension — value per adjacent same-attr tile when placing
+  2.1591,   // 8: feature_complete — bonus for completing a feature surround
+  1.8247,   // 9: expansion_value — base value of acquiring/placing expansion
+  1.3292,   // 10: expansion_early — bonus for expansions in early rounds
+  -0.0595,  // 11: storage_pressure — penalty per tile over storage threshold
+  1.2806,   // 12: storage_low_bonus — bonus for acquiring when storage is low
+  -1.7860,  // 13: pass_penalty — penalty for choosing to pass
+  -0.4670   // 14: late_game_place — late-round placement adjustment
+];
+
+function wouldAiCompleteFeature(garden, q, r) {
+  var nbrs = hexNeighbors(q, r);
+  for (var n = 0; n < nbrs.length; n++) {
+    var cell = garden.get(hexKey(nbrs[n].q, nbrs[n].r));
+    if (!cell || !cell.feature) continue;
+    var fnbrs = hexNeighbors(nbrs[n].q, nbrs[n].r);
+    var allFilled = true;
+    for (var fn = 0; fn < fnbrs.length; fn++) {
+      if (fnbrs[fn].q === q && fnbrs[fn].r === r) continue; // we're about to place here
+      var fnCell = garden.get(hexKey(fnbrs[fn].q, fnbrs[fn].r));
+      if (!fnCell || !fnCell.tile) { allFilled = false; break; }
+    }
+    if (allFilled) return true;
+  }
+  return false;
+}
+
+function findAiPayment(storage, tileIdx) {
+  var tile = storage[tileIdx];
+  if (!tile) return null;
+  var cost = tile.isJoker ? 0 : tile.cost;
+  if (cost <= 1) return [];
+  var needed = cost - 1;
+  var candidates = [];
+  for (var i = 0; i < storage.length; i++) {
+    if (i === tileIdx) continue;
+    var pt = storage[i];
+    if (pt.isJoker) {
+      candidates.push({ idx: i, tile: pt });
+    } else if ((pt.color === tile.color || pt.pattern === tile.pattern) &&
+               !(pt.color === tile.color && pt.pattern === tile.pattern)) {
+      candidates.push({ idx: i, tile: pt });
+    }
+  }
+  if (candidates.length < needed) return null;
+  // Try color-based first
+  var colorPay = [];
+  for (var c = 0; c < candidates.length; c++) {
+    if (candidates[c].tile.isJoker || candidates[c].tile.color === tile.color) colorPay.push(candidates[c]);
+  }
+  if (colorPay.length >= needed) return colorPay.slice(0, needed).map(function(c) { return c.idx; });
+  // Try pattern-based
+  var patternPay = [];
+  for (var p = 0; p < candidates.length; p++) {
+    if (candidates[p].tile.isJoker || candidates[p].tile.pattern === tile.pattern) patternPay.push(candidates[p]);
+  }
+  if (patternPay.length >= needed) return patternPay.slice(0, needed).map(function(c) { return c.idx; });
+  // Mixed
+  if (candidates.length >= needed) return candidates.slice(0, needed).map(function(c) { return c.idx; });
+  return null;
+}
+
+function decideAiActionAdaptive(playerIdx, storage, expStorage, garden) {
+  var w = ADAPTIVE_W;
+  var wheelAttrs = getCurrentWheelAttributes();
+  var roundPts = getCurrentRoundPoints();
+  var candidates = [];
+
+  // Pre-compute garden tile counts
+  var gardenByColor = {};
+  var gardenByPattern = {};
+  garden.forEach(function(cell) {
+    if (!cell.tile || cell.tile.isJoker) return;
+    gardenByColor[cell.tile.color] = (gardenByColor[cell.tile.color] || 0) + 1;
+    gardenByPattern[cell.tile.pattern] = (gardenByPattern[cell.tile.pattern] || 0) + 1;
+  });
+
+  var hasTilesInDisplay = false;
+  if (State.expansionStack.length > 0 && State.expansionStack[0].tilesOnTop.length > 0) hasTilesInDisplay = true;
+  if (!hasTilesInDisplay) {
+    for (var d = 0; d < State.displayExpansions.length; d++) {
+      if (State.displayExpansions[d].tilesOnTop && State.displayExpansions[d].tilesOnTop.length > 0 && !State.displayExpansions[d].faceUp) {
+        hasTilesInDisplay = true; break;
+      }
+    }
+  }
+
+  // --- Score all acquire actions ---
+  if (hasTilesInDisplay && storage.length < 12) {
+    // Try each color
+    for (var ci = 0; ci < COLORS.length; ci++) {
+      var cid = COLORS[ci].id;
+      var m = getAcquireMatches('color', cid);
+      if (m.tiles.length === 0 || storage.length + m.tiles.length > 12) continue;
+      var score = m.tiles.length * w[0]; // tile_volume
+      for (var wi = 0; wi < 3; wi++) {
+        if (wheelAttrs[wi].type === 'color' && wheelAttrs[wi].id === cid)
+          score += m.tiles.length * roundPts[wi] * w[1]; // wheel_acquire
+      }
+      score += (gardenByColor[cid] || 0) * w[2]; // garden_synergy
+      var totalCost = 0;
+      for (var ti = 0; ti < m.tiles.length; ti++) totalCost += m.tiles[ti].tile.cost;
+      score += totalCost * w[3]; // high_value_pref
+      var newSize = storage.length + m.tiles.length;
+      if (newSize > 8) score += (newSize - 8) * w[11]; // storage_pressure
+      if (storage.length < 4) score += w[12]; // storage_low_bonus
+      candidates.push({ score: score, action: { type: 'acquire', attrType: 'color', attrValue: cid } });
+    }
+    // Try each pattern
+    for (var pi = 0; pi < PATTERNS.length; pi++) {
+      var pid = PATTERNS[pi].id;
+      var m2 = getAcquireMatches('pattern', pid);
+      if (m2.tiles.length === 0 || storage.length + m2.tiles.length > 12) continue;
+      var score2 = m2.tiles.length * w[0];
+      for (var wi2 = 0; wi2 < 3; wi2++) {
+        if (wheelAttrs[wi2].type === 'pattern' && wheelAttrs[wi2].id === pid)
+          score2 += m2.tiles.length * roundPts[wi2] * w[1];
+      }
+      score2 += (gardenByPattern[pid] || 0) * w[2];
+      var totalCost2 = 0;
+      for (var ti2 = 0; ti2 < m2.tiles.length; ti2++) totalCost2 += m2.tiles[ti2].tile.cost;
+      score2 += totalCost2 * w[3];
+      var newSize2 = storage.length + m2.tiles.length;
+      if (newSize2 > 8) score2 += (newSize2 - 8) * w[11];
+      if (storage.length < 4) score2 += w[12];
+      candidates.push({ score: score2, action: { type: 'acquire', attrType: 'pattern', attrValue: pid } });
+    }
+  }
+
+  // --- Score all placement actions ---
+  for (var si = 0; si < storage.length; si++) {
+    var tile = storage[si];
+    var payment = findAiPayment(storage, si);
+    if (tile.cost > 1 && !tile.isJoker && payment === null) continue;
+
+    // Find valid hexes
+    var validHexes = [];
+    garden.forEach(function(cell) {
+      if (cell.tile) return;
+      var nbrs = hexNeighbors(cell.q, cell.r);
+      var hasAdj = false;
+      var valid = true;
+      for (var n = 0; n < nbrs.length; n++) {
+        var nc = garden.get(hexKey(nbrs[n].q, nbrs[n].r));
+        if (!nc || !nc.tile) continue;
+        hasAdj = true;
+        if (nc.tile.color === tile.color && nc.tile.pattern === tile.pattern) { valid = false; break; }
+        if (!tile.isJoker && !nc.tile.isJoker && nc.tile.color !== tile.color && nc.tile.pattern !== tile.pattern) { valid = false; break; }
+      }
+      var gardenHasTiles = false;
+      garden.forEach(function(c) { if (c.tile) gardenHasTiles = true; });
+      if (gardenHasTiles && !hasAdj) return;
+      if (valid) validHexes.push({ q: cell.q, r: cell.r });
+    });
+    if (validHexes.length === 0) continue;
+
+    // Find best hex for this tile
+    var bestHexScore = -Infinity;
+    var bestHex = validHexes[0];
+    for (var hi = 0; hi < validHexes.length; hi++) {
+      var hex = validHexes[hi];
+      var hs = 0;
+      var hnbrs = hexNeighbors(hex.q, hex.r);
+      var sameColor = 0, samePattern = 0;
+      for (var hn = 0; hn < hnbrs.length; hn++) {
+        var hnc = garden.get(hexKey(hnbrs[hn].q, hnbrs[hn].r));
+        if (!hnc || !hnc.tile || hnc.tile.isJoker) continue;
+        if (hnc.tile.color === tile.color) sameColor++;
+        if (hnc.tile.pattern === tile.pattern) samePattern++;
+      }
+      hs += Math.max(sameColor, samePattern) * w[7]; // group_extension
+      if (wouldAiCompleteFeature(garden, hex.q, hex.r)) hs += w[8]; // feature_complete
+      if (hs > bestHexScore) { bestHexScore = hs; bestHex = hex; }
+    }
+
+    var placeScore = w[4]; // placement_base
+    placeScore += tile.cost * w[5]; // placed_value_mult
+    for (var pwi = 0; pwi < 3; pwi++) {
+      var wa = wheelAttrs[pwi];
+      if ((wa.type === 'color' && tile.color === wa.id) ||
+          (wa.type === 'pattern' && tile.pattern === wa.id))
+        placeScore += roundPts[pwi] * w[6]; // wheel_place
+    }
+    placeScore += bestHexScore;
+    if (State.round >= 3) placeScore += w[14]; // late_game_place
+    candidates.push({ score: placeScore, action: { type: 'place', tileIdx: si, target: bestHex, paymentIdxs: payment || [] } });
+  }
+
+  // --- Score expansion acquire ---
+  if (expStorage.length < 2) {
+    for (var ei = 0; ei < State.displayExpansions.length; ei++) {
+      if (State.displayExpansions[ei].faceUp) {
+        var expScore = w[9] + (4 - State.round) * w[10];
+        candidates.push({ score: expScore, action: { type: 'acquireExp', expIndex: ei } });
+      }
+    }
+  }
+
+  // --- Score expansion place ---
+  var aiSlots = State.players[playerIdx].aiUsedExpansionSlots || [];
+  if (expStorage.length > 0 && canAiAffordExpansion(expStorage[0], storage) && findValidExpansionCenters(aiSlots).length > 0) {
+    var placeExpScore = w[9] * 1.5 + (4 - State.round) * w[10];
+    candidates.push({ score: placeExpScore, action: { type: 'placeExp' } });
+  }
+
+  // --- Score pass ---
+  var passScore = w[13];
+  var anyPassed = false;
+  for (var rp = 0; rp < State.roundPassed.length; rp++) {
+    if (State.roundPassed[rp]) { anyPassed = true; break; }
+  }
+  if (!anyPassed) passScore += w[13] * 0.5; // extra penalty for first-to-pass
+  candidates.push({ score: passScore, action: { type: 'pass' } });
+
+  if (candidates.length === 0) return { type: 'pass' };
+  // Sort by score descending, pick best
+  candidates.sort(function(a, b) { return b.score - a.score; });
+  return candidates[0].action;
+}
+
 function decideAiAction(playerIdx, storage, expStorage, garden) {
+  // Use adaptive strategy if player has it
+  if (State.players[playerIdx].strategy === 'adaptive') {
+    return decideAiActionAdaptive(playerIdx, storage, expStorage, garden);
+  }
   var personality = playerIdx; // 1=Greedy, 2=Builder, 3=Balanced
 
   // Check if there are tiles in the display to acquire
@@ -3140,6 +3391,7 @@ function endRound() {
     var leftover = scoreLeftovers(State.storage, State.expansionStorage);
     State.players[0].score += leftover;
     if (leftover < 0) addLog('Leftover penalty: ' + leftover + ' pts');
+    else if (leftover > 0) addLog('Leftover bonus (jokers): +' + leftover + ' pts');
 
     // AI final scoring using actual gardens
     for (var k = 1; k < State.players.length; k++) {
@@ -3187,6 +3439,7 @@ document.getElementById('btnNewGame').addEventListener('click', function() {
 document.getElementById('btnPass').addEventListener('click', function() {
   if (State.currentPlayer !== 0) return;
   if (State.expansionTilePlacing || State.placingExpansion || State.paymentMode) return;
+  applyFirstPassPenalty(0);
   addLog('You pass.');
   State.roundPassed[0] = true;
   endTurn();
