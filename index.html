@@ -3453,6 +3453,13 @@ function logPlayerMove(playerAction) {
 
   var delta = best.score - playerScore;
 
+  // Capture tile count at action time (before state changes)
+  var acquiredTileCount = 0;
+  if (playerAction.type === 'acquire') {
+    var acqSnapshot = getAcquireMatches(playerAction.attrType, playerAction.attrValue);
+    acquiredTileCount = acqSnapshot.tiles.length;
+  }
+
   State.moveLog.push({
     turn: State.turnCounter,
     round: State.round,
@@ -3463,7 +3470,8 @@ function logPlayerMove(playerAction) {
     bestDesc: describeAction(best.action),
     bestScore: best.score,
     delta: delta,
-    why: delta > 1.0 ? describeWhy(best.action) : ''
+    why: delta > 1.0 ? describeWhy(best.action) : '',
+    acquiredTileCount: acquiredTileCount
   });
 }
 
@@ -3497,8 +3505,7 @@ function showTrainerReview() {
       if (entry.round <= 3) earlyPasses++;
     }
     if (entry.action.type === 'acquire') {
-      var acqM = getAcquireMatches(entry.action.attrType, entry.action.attrValue);
-      acquireCounts.push(acqM.tiles.length);
+      acquireCounts.push(entry.acquiredTileCount || 0);
     }
     if (entry.action.type === 'acquireExp' || entry.action.type === 'placeExp') expansionActions++;
     if (entry.bestAction && entry.bestAction._completesFeature) featureCompletions++;
